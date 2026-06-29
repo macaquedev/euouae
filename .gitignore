@@ -25,3 +25,9 @@ vite.config.ts.timestamp-*
 # lexicon build inputs/outputs (large, regenerable)
 /data/sources/
 /static/lexicons/
+
+# user app data (card state, review log, saved lists) — personal, never commit
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+euouae.sqlite3
