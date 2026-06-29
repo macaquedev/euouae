@@ -1,0 +1,305 @@
+/* ============================================================================
+   euouae — "Night Board" design system
+   A keyboard-first study tool for tournament Scrabble. Dark like board felt,
+   with a warm maple-tile accent. IBM Plex Sans (UI) + IBM Plex Mono (words).
+   ========================================================================== */
+
+:root {
+	/* Render native controls (select popups, date pickers, scrollbars) dark, so
+	   they never flash white-on-white against the felt. */
+	color-scheme: dark;
+
+	/* — Palette ———————————————————————————————————————————————— */
+	--board: #0c100e; /* board-felt black-green (page) */
+	--surface-1: #121714; /* raised panel */
+	--surface-2: #19201c; /* inputs, hover */
+	--surface-3: #212a25; /* pressed / active row */
+	--line: #28312c; /* hairline border */
+	--line-strong: #3a463f;
+
+	--ink: #ecefea; /* bone-white text */
+	--ink-dim: #99a39b; /* secondary text */
+	--ink-faint: #6a746d; /* captions, disabled */
+
+	--maple: #e6b36b; /* the wooden tile — signature accent */
+	--maple-soft: #f0cd97;
+	--maple-deep: #c9954e; /* pressed accent */
+	--on-maple: #1a1206; /* text on maple */
+	--maple-ghost: #2a2114; /* faint maple wash */
+
+	--valid: #5fd9a3; /* acceptable */
+	--valid-wash: #102a20;
+	--invalid: #f2685f; /* unacceptable */
+	--invalid-wash: #2c1513;
+
+	/* — Back-compat aliases (older components read these) ——————————— */
+	--bg: var(--board);
+	--surface: var(--surface-1);
+	--border: var(--line);
+	--text: var(--ink);
+	--muted: var(--ink-dim);
+	--accent: var(--maple);
+	--valid-bg: var(--valid-wash);
+	--invalid-bg: var(--invalid-wash);
+
+	/* — Type ——————————————————————————————————————————————————— */
+	--font-ui: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--font-word: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+	/* — Space (4px base) ———————————————————————————————————————— */
+	--s1: 0.25rem;
+	--s2: 0.5rem;
+	--s3: 0.75rem;
+	--s4: 1rem;
+	--s5: 1.5rem;
+	--s6: 2rem;
+	--s7: 3rem;
+	--s8: 4rem;
+
+	/* — Radii (tiles are softly-cornered squares) ——————————————————— */
+	--r-sm: 6px;
+	--r: 10px;
+	--r-tile: 9px;
+	--r-pill: 999px;
+
+	/* — Motion ————————————————————————————————————————————————— */
+	--ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+	--t-fast: 110ms;
+	--t: 190ms;
+	--t-slow: 320ms;
+
+	/* — Elevation ————————————————————————————————————————————— */
+	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+	--shadow-pop: 0 18px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px var(--line);
+
+	--maxw: 64rem;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	height: 100%;
+}
+
+body {
+	background: var(--board);
+	color: var(--ink);
+	font-family: var(--font-ui);
+	font-size: 15px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+	/* A faint vignette so the board recedes and panels read as figure. */
+	background-image: radial-gradient(120% 80% at 50% -10%, #10160f 0%, var(--board) 60%);
+	background-attachment: fixed;
+}
+
+::selection {
+	background: var(--maple);
+	color: var(--on-maple);
+}
+
+/* — Keyboard-first: a clear, consistent focus ring everywhere ——————————— */
+:focus {
+	outline: none;
+}
+:focus-visible {
+	outline: 2px solid var(--maple);
+	outline-offset: 2px;
+	border-radius: var(--r-sm);
+}
+
+/* Custom scrollbars that match the felt. */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--line-strong) transparent;
+}
+*::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+	background: var(--line-strong);
+	border-radius: var(--r-pill);
+	border: 2px solid var(--board);
+}
+
+button {
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+	background: none;
+	border: none;
+}
+
+/* Dropdown popups inherit no theme of their own — color them explicitly so the
+   text stays readable on every platform's native <select> rendering. */
+option,
+optgroup {
+	background: var(--surface-2);
+	color: var(--ink);
+}
+
+a {
+	color: inherit;
+}
+
+/* ============================================================================
+   Utility classes — used across pages for consistent structure (Gestalt:
+   similarity, common region, proximity) so a layout tweak lives in one place.
+   ========================================================================== */
+
+/* Centered content column. --maxw can be overridden per page. */
+.page {
+	max-width: var(--maxw);
+	margin: 0 auto;
+	padding: var(--s6) var(--s5) var(--s8);
+}
+
+/* The "tournament data" label: small, uppercase, tracked monospace. */
+.eyebrow {
+	font-family: var(--font-word);
+	font-size: 0.7rem;
+	font-weight: 500;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--ink-faint);
+}
+
+/* A bordered group — encloses related content as one region. */
+.panel {
+	background: var(--surface-1);
+	border: 1px solid var(--line);
+	border-radius: var(--r);
+	padding: var(--s4);
+}
+
+/* Text inputs / textareas. */
+.input {
+	width: 100%;
+	background: var(--surface-2);
+	color: var(--ink);
+	border: 1px solid var(--line);
+	border-radius: var(--r);
+	padding: 0.7rem 0.9rem;
+	font: inherit;
+	outline: none;
+	transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+.input:focus {
+	border-color: var(--maple);
+	box-shadow: 0 0 0 3px var(--maple-ghost);
+}
+.input::placeholder {
+	color: var(--ink-faint);
+}
+
+/* The word-entry field: monospace, tracked, uppercased — the study primitive. */
+.input--word {
+	font-family: var(--font-word);
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	caret-color: var(--maple);
+}
+
+/* Buttons. */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--s2);
+	border: 1px solid var(--line);
+	background: var(--surface-2);
+	color: var(--ink);
+	border-radius: var(--r);
+	padding: 0.6rem 1rem;
+	font-weight: 500;
+	transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease),
+		transform var(--t-fast) var(--ease);
+}
+.btn:hover:not(:disabled) {
+	border-color: var(--line-strong);
+	background: var(--surface-3);
+}
+.btn:active:not(:disabled) {
+	transform: translateY(1px);
+}
+.btn:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.btn--primary {
+	background: var(--maple);
+	border-color: var(--maple);
+	color: var(--on-maple);
+	font-weight: 600;
+}
+.btn--primary:hover:not(:disabled) {
+	background: var(--maple-soft);
+	border-color: var(--maple-soft);
+}
+
+.btn--ghost {
+	background: transparent;
+	color: var(--ink-dim);
+}
+.btn--ghost:hover:not(:disabled) {
+	color: var(--ink);
+	background: var(--surface-2);
+}
+
+.btn--danger:hover:not(:disabled) {
+	border-color: var(--invalid);
+	color: var(--invalid);
+}
+
+/* A keycap, for showing shortcuts inline. */
+.kbd {
+	display: inline-flex;
+	align-items: center;
+	min-width: 1.4em;
+	height: 1.5em;
+	padding: 0 0.4em;
+	justify-content: center;
+	font-family: var(--font-word);
+	font-size: 0.78em;
+	color: var(--ink-dim);
+	background: var(--surface-2);
+	border: 1px solid var(--line);
+	border-bottom-width: 2px;
+	border-radius: var(--r-sm);
+}
+
+.muted {
+	color: var(--ink-dim);
+}
+.faint {
+	color: var(--ink-faint);
+}
+
+/* Visually hidden, still reachable by keyboard / screen readers. */
+.visually-hidden {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.001ms !important;
+		transition-duration: 0.001ms !important;
+	}
+}
