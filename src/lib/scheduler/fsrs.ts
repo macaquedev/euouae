@@ -6,7 +6,7 @@
 // per card. The four-level grade is produced automatically by the quiz (from
 // answer latency), so the user never rates a card.
 
-import { epochSeconds } from '../time';
+import { epochSeconds, startOfDayAfter } from '../time';
 import type { CardState, Grade, Scheduler } from './types';
 
 const DAY = 86_400;
@@ -125,9 +125,10 @@ export class FsrsScheduler implements Scheduler {
 
 	dueAt(state: CardState): number {
 		// Never studied under FSRS → due now. Otherwise due once retrievability
-		// would fall to the request retention: last review + the stability interval.
+		// would fall to the request retention: the stability interval out from the
+		// last review, snapped to the start of that day so it surfaces at 00:00.
 		if (state.stability === null || state.lastReview === null) return -Infinity;
-		return state.lastReview + nextInterval(state.stability) * DAY;
+		return startOfDayAfter(state.lastReview, nextInterval(state.stability));
 	}
 
 	isDue(state: CardState, now: Date): boolean {

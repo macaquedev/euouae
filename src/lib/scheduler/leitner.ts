@@ -4,15 +4,13 @@
 // within. The due date is computed on demand from the box and the last review —
 // nothing is stored — so it can never collide with FSRS's schedule.
 
-import { epochSeconds } from '../time';
+import { epochSeconds, startOfDayAfter } from '../time';
 import type { CardState, Grade, Scheduler } from './types';
 
 /** Days until review for a card in box i (last value used beyond the end). */
 export const CARDBOX_SCHEDULE: readonly number[] = [1, 4, 7, 12, 20, 30, 60, 90, 150, 270, 480];
 /** ± days of spread applied at box i, so future reviews fan out. */
 export const CARDBOX_WINDOW: readonly number[] = [0, 1, 2, 3, 5, 7, 10, 15, 20, 30, 50];
-
-const DAY = 86_400;
 
 const at = (table: readonly number[], i: number): number => table[Math.min(i, table.length - 1)];
 
@@ -90,7 +88,7 @@ export class LeitnerScheduler implements Scheduler {
 		// Never studied under Leitner → due now so it gets introduced.
 		if (state.cardbox === null || state.cardboxReviewed === null) return -Infinity;
 		const days = at(this.schedule, state.cardbox) + jitterDays(state.question, at(this.window, state.cardbox));
-		return state.cardboxReviewed + days * DAY;
+		return startOfDayAfter(state.cardboxReviewed, days);
 	}
 
 	isDue(state: CardState, now: Date): boolean {
