@@ -15,25 +15,22 @@
 	import { goto } from '$app/navigation';
 	import favicon from '$lib/assets/favicon.svg';
 	import { lexicon } from '$lib/lexicon/store.svelte';
+	import { prefersReducedMotion } from '$lib/motion';
 	import { NAV } from '$lib/keyboard/nav';
 	import { kbd } from '$lib/keyboard/ui.svelte';
 	import Tile from '$lib/components/Tile.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import ShortcutsHelp from '$lib/components/ShortcutsHelp.svelte';
+	import LexiconPicker from '$lib/components/LexiconPicker.svelte';
 
 	let { children } = $props();
 
-	const reduce =
-		typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+	const reduce = prefersReducedMotion();
 
-	onMount(() => lexicon.load());
+	onMount(() => void lexicon.init());
 
 	const path = $derived(page.url.pathname.replace(base, '').replace(/\/$/, ''));
 	const isActive = (href: string) => (href === '' ? path === '' : path === `/${href}`);
-
-	const status = $derived(
-		lexicon.error ? 'error' : lexicon.engine ? 'ready' : 'loading'
-	);
 
 	// "g then <key>" jump navigation, only when not typing in a field.
 	let gPending = false;
@@ -131,10 +128,7 @@
 			<button class="help" onclick={() => kbd.openHelp()} aria-label="Keyboard shortcuts" title="Shortcuts">
 				?
 			</button>
-			<span class="lex" data-status={status} title={`Lexicon: ${status}`}>
-				<span class="dot"></span>
-				{lexicon.name}
-			</span>
+			<LexiconPicker />
 		</div>
 	</header>
 
@@ -273,40 +267,6 @@
 	.help:hover {
 		color: var(--ink);
 		border-color: var(--line-strong);
-	}
-
-	.lex {
-		display: flex;
-		align-items: center;
-		gap: 0.4rem;
-		font-family: var(--font-word);
-		font-size: 0.78rem;
-		color: var(--ink-dim);
-		padding: 0.25rem 0.6rem 0.25rem 0.5rem;
-		border: 1px solid var(--line);
-		border-radius: var(--r-pill);
-	}
-	.dot {
-		width: 7px;
-		height: 7px;
-		border-radius: 50%;
-		background: var(--ink-faint);
-	}
-	.lex[data-status='ready'] .dot {
-		background: var(--valid);
-		box-shadow: 0 0 8px var(--valid);
-	}
-	.lex[data-status='loading'] .dot {
-		background: var(--maple);
-		animation: pulse 1.1s var(--ease) infinite;
-	}
-	.lex[data-status='error'] .dot {
-		background: var(--invalid);
-	}
-	@keyframes pulse {
-		50% {
-			opacity: 0.3;
-		}
 	}
 
 	.load-error {

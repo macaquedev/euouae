@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { WordEntry } from '$lib/lexicon';
+	import { lexicon } from '$lib/lexicon/store.svelte';
+	import { joinHooks } from '$lib/text';
 
 	interface Props {
 		entry: WordEntry;
@@ -7,15 +9,20 @@
 	let { entry }: Props = $props();
 
 	const probRank = $derived(entry.probabilityOrder?.[0] ?? null);
+	const multiChar = $derived(lexicon.engine?.alphabet.hasMultiCharTiles ?? false);
 </script>
 
 <article class="card">
 	<div class="headline">
-		<span class="fronthooks" aria-label="front hooks">{entry.frontHooks.toLowerCase()}</span>
+		<span class="fronthooks" aria-label="front hooks">
+			{joinHooks(entry.frontHooks, multiChar).toLowerCase()}
+		</span>
 		<span class="word" class:fronthooked={entry.isFrontHook} class:backhooked={entry.isBackHook}>
 			{entry.word}
 		</span>
-		<span class="backhooks" aria-label="back hooks">{entry.backHooks.toLowerCase()}</span>
+		<span class="backhooks" aria-label="back hooks">
+			{joinHooks(entry.backHooks, multiChar).toLowerCase()}
+		</span>
 	</div>
 
 	{#if entry.definition}

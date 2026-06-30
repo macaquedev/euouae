@@ -2,10 +2,9 @@
 	import { fade, scale } from 'svelte/transition';
 	import { NAV } from '$lib/keyboard/nav';
 	import { kbd } from '$lib/keyboard/ui.svelte';
+	import { overlayDuration } from '$lib/motion';
 
-	const reduce =
-		typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-	const dur = reduce ? 0 : 150;
+	const dur = overlayDuration();
 
 	interface Row {
 		keys: string[];

@@ -11,12 +11,21 @@
 	} from '$lib/search/conditions';
 	import { searchState } from '$lib/search/store.svelte';
 	import { setScratch } from '$lib/marinate/scratch';
+	import { plural } from '$lib/text';
 	import { ListStore, type ListSummary } from '$lib/userdata/lists';
 	import VirtualList from '$lib/components/VirtualList.svelte';
 	import WordRow from '$lib/components/WordRow.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
 	const ROW_HEIGHT = 38;
+	// Hook columns are capped at this width (in ch) so one word with an unusually
+	// large hook set can't blow the table out past the viewport; past the cap,
+	// that row's hooks wrap onto extra lines instead (see `rowHeight` below) —
+	// other rows stay single-line, since VirtualList sizes each row separately.
+	const MAX_HOOK_COL = 8;
+	// Extra row height (px) per wrapped hooks line beyond the first. Matches
+	// `.hooks`' line-height in WordRow.svelte.
+	const HOOK_LINE_HEIGHT = 17;
 
 	// The result table's columns. Sortable ones become clickable headers; the
 	// default direction is what a fresh click on that column applies.
@@ -112,13 +121,26 @@
 	// Size the variable columns to the widest content in this result set, so the
 	// word always starts at the same x and hooks are shown in full. Word gains a
 	// little for its letter-spacing; the rest are clamped to a sensible minimum.
+	// Hook columns are additionally capped at MAX_HOOK_COL — a word with an
+	// unusually large hook set wraps onto more lines (see `rowHeight`) rather than
+	// widening the whole table.
 	const cols = $derived.by(() => {
 		const c = result?.columns;
-		const front = Math.max(c?.frontHooks ?? 0, 2);
+		const front = Math.min(Math.max(c?.frontHooks ?? 0, 2), MAX_HOOK_COL);
 		const word = Math.max(c?.word ?? 0, 4);
-		const back = Math.max(c?.backHooks ?? 0, 2);
+		const back = Math.min(Math.max(c?.backHooks ?? 0, 2), MAX_HOOK_COL);
 		return `${front}ch ${word + 1}ch ${back}ch minmax(8ch, 1fr) 4ch 4ch 6ch`;
 	});
+
+	// Per-row height: most words need only one line of hooks, so most rows stay
+	// ROW_HEIGHT. Only a row whose own hooks exceed MAX_HOOK_COL grows taller, by
+	// exactly as many lines as it needs — VirtualList sizes each row separately,
+	// so one heavily-hooked word doesn't stretch every other row in the table.
+	function rowHeight(index: number): number {
+		const chars = result?.hookChars[index] ?? 0;
+		const lines = Math.max(1, Math.ceil(chars / MAX_HOOK_COL));
+		return ROW_HEIGHT + (lines - 1) * HOOK_LINE_HEIGHT;
+	}
 
 	// Click a column: toggle direction if already sorting by it, else adopt that
 	// column's default direction. Re-runs the search so the DB does the ordering.
@@ -151,10 +173,6 @@
 
 	function wordCount() {
 		return result?.words.length ?? 0;
-	}
-
-	function plural(n: number) {
-		return `${n.toLocaleString()} word${n === 1 ? '' : 's'}`;
 	}
 
 	function requestSave() {
@@ -290,10 +308,7 @@
 	{#if result}
 		<div class="results">
 			<div class="results-bar">
-				<p class="count">
-					{result.words.length.toLocaleString()}
-					{result.words.length === 1 ? 'word' : 'words'}
-				</p>
+				<p class="count">{plural(result.words.length)}</p>
 				{#if result.words.length > 0}
 					{#if panel === 'save'}
 						<div class="save-form">
@@ -360,7 +375,7 @@
 			</div>
 			{#if result.words.length > 0}
 				<div class="table" style="--cols: {cols}">
-					<VirtualList items={result.words} itemHeight={ROW_HEIGHT}>
+					<VirtualList items={result.words} itemHeight={rowHeight}>
 						{#snippet header()}
 							<div class="thead">
 								{#each COLUMNS as col (col.label + col.class)}

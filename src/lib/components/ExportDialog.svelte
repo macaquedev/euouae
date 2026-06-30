@@ -9,6 +9,7 @@
 		type ExportAttribute,
 		type ExportFormat
 	} from '$lib/userdata/export';
+	import { overlayDuration } from '$lib/motion';
 
 	interface Props {
 		listName: string;
@@ -18,9 +19,7 @@
 
 	let { listName, onconfirm, oncancel }: Props = $props();
 
-	const reduce =
-		typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-	const dur = reduce ? 0 : 150;
+	const dur = overlayDuration();
 
 	let format = $state<ExportFormat>('one-per-line');
 

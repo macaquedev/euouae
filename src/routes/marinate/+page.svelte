@@ -7,6 +7,7 @@
 	import { ListStore } from '$lib/userdata/lists';
 	import { getScratch } from '$lib/marinate/scratch';
 	import { alphagram } from '$lib/lexicon/letters';
+	import { joinHooks, letters, words } from '$lib/text';
 
 	// Marinate is a self-test cram sheet over a saved list. One input at the top
 	// receives every answer; as soon as a typed token matches a row's answer, that
@@ -18,12 +19,10 @@
 	type Mode = 'words' | 'hooks';
 
 	interface WordRow {
-		readonly key: string;
 		readonly alphagram: string;
 		readonly word: string;
 	}
 	interface HookRow {
-		readonly key: string;
 		readonly word: string;
 		readonly front: string;
 		readonly back: string;
@@ -105,6 +104,7 @@
 			words = scratch ? [...scratch.words] : [];
 		}
 		let absent = 0;
+		const multiChar = engine.alphabet.hasMultiCharTiles;
 
 		const recall: WordRow[] = [];
 		const hooks: HookRow[] = [];
@@ -114,12 +114,11 @@
 				absent++;
 				continue;
 			}
-			recall.push({ key: word, alphagram: alphagram(word), word });
+			recall.push({ alphagram: alphagram(word), word });
 			hooks.push({
-				key: word,
 				word,
-				front: hooked.frontHooks,
-				back: hooked.backHooks,
+				front: joinHooks(hooked.frontHooks, multiChar),
+				back: joinHooks(hooked.backHooks, multiChar),
 				mask: hookMask()
 			});
 		}
@@ -166,7 +165,7 @@
 	}
 
 	function sameLetters(a: string, b: string): boolean {
-		return a.length === b.length && [...a].sort().join('') === [...b].sort().join('');
+		return alphagram(a) === alphagram(b);
 	}
 
 	// Read a hooks answer "front word back" — find the token that is a row's word,
@@ -211,8 +210,6 @@
 		}, 600);
 	}
 
-	const normalize = (s: string) => s.toUpperCase().replace(/[^A-Z]/g, '');
-
 	function onInput() {
 		if (mode === 'hooks') onHookInput();
 		else onWordInput();
@@ -227,7 +224,7 @@
 		const targets = wordRows.filter((r) => !solvedWords.has(r.word)).map((r) => r.word);
 		const leftover: string[] = [];
 		parts.forEach((part, i) => {
-			const token = normalize(part);
+			const token = letters(part);
 			const isPartial = i === parts.length - 1 && !trailing;
 			if (isPartial && targets.some((t) => t !== token && t.startsWith(token))) {
 				leftover.push(part);
@@ -244,12 +241,7 @@
 	// only once the word is present and its front/back letter sets both match —
 	// an incomplete or wrong answer just stays so you can keep typing or fix it.
 	function onHookInput() {
-		const tokens = entry
-			.toUpperCase()
-			.split(/\s+/)
-			.map((t) => t.replace(/[^A-Z]/g, ''))
-			.filter(Boolean);
-		const interp = interpretHooks(tokens);
+		const interp = interpretHooks(words(entry));
 		if (!interp) return;
 		const { row, front, back } = interp;
 		if (!sameLetters(front, row.front) || !sameLetters(back, row.back)) return;
@@ -326,13 +318,13 @@
 				<span>Answer</span>
 			</div>
 			{#if mode === 'words'}
-				{#each displayRows as row, i (row.key)}
+				{#each displayRows as row, i (row.word)}
 					{@const solved = solvedWords.has(row.word)}
 					{@const repeat = i > 0 && displayRows[i - 1].alphagram === row.alphagram}
 					<div
 						class="row"
 						class:solved
-						class:flash={flashed.has(row.key)}
+						class:flash={flashed.has(row.word)}
 						class:celebrate={celebrating}
 						animate:flip={{ duration: 250 }}
 					>
@@ -341,12 +333,12 @@
 					</div>
 				{/each}
 			{:else}
-				{#each displayHookRows as row (row.key)}
+				{#each displayHookRows as row (row.word)}
 					{@const solved = solvedHooks.has(row.word)}
 					<div
 						class="row"
 						class:solved
-						class:flash={flashed.has(row.key)}
+						class:flash={flashed.has(row.word)}
 						class:celebrate={celebrating}
 						animate:flip={{ duration: 250 }}
 					>

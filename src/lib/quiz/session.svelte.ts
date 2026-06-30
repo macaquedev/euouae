@@ -6,6 +6,7 @@
 // against a personal baseline; Standard drills without touching any schedule.
 
 import type { LexiconEngine, WordEntry } from '$lib/lexicon';
+import { alphagram } from '$lib/lexicon/letters';
 import { words } from '$lib/text';
 import { newCardState, type CardState, type Grade, type Scheduler } from '$lib/scheduler';
 import type { CardStore } from './cards';
@@ -197,7 +198,7 @@ export class QuizSession {
 		if (this.revealed || this.done) return { duplicate: null, invalid: false };
 
 		const answerWords = new Set(this.answers.map((a) => a.word));
-		const rack = [...this.question].sort().join('');
+		const rack = alphagram(this.question);
 		const found = new Set(this.foundWords);
 		let dup: string | null = null;
 		let wrong = false;
@@ -207,7 +208,7 @@ export class QuizSession {
 			if (answerWords.has(token)) {
 				if (found.has(token)) dup = token;
 				else found.add(token);
-			} else if ([...token].sort().join('') === rack) {
+			} else if (alphagram(token) === rack) {
 				wrong = true; // a real rearrangement of the rack, just not a word
 			} else {
 				invalid = true; // junk / typo — not even built from the rack's tiles

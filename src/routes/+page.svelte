@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
 	import { lexicon } from '$lib/lexicon/store.svelte';
+	import { prefersReducedMotion } from '$lib/motion';
 	import { judgePlay, type Verdict } from '$lib/judge/judge';
 	import JudgeMode from '$lib/judge/JudgeMode.svelte';
 	import Tile from '$lib/components/Tile.svelte';
@@ -25,8 +26,7 @@
 	function launchJudge() {
 		if (canLaunch) judgeMode = true;
 	}
-	const reduce =
-		typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+	const reduce = prefersReducedMotion();
 
 	function rule() {
 		if (engine) ruling = judgePlay(engine, input);

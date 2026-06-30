@@ -3,7 +3,7 @@
 
 import type { Database, SqlValue } from '@sqlite.org/sqlite-wasm';
 import { bool, num, numOrNull, str } from '$lib/sqlite/values';
-import { ALPHABET, alphagram } from './letters';
+import type { Alphabet, Tile } from './alphabet';
 import type {
 	ByBlanks,
 	ColumnWidths,
@@ -30,7 +30,7 @@ function byBlanks(v0: SqlValue, v1: SqlValue, v2: SqlValue): ByBlanks {
 	return { 0: num(v0), 1: num(v1), 2: num(v2) };
 }
 
-function rowToEntry(r: Row): WordEntry {
+function rowToEntry(alphabet: Alphabet, r: Row): WordEntry {
 	const pos = str(r.part_of_speech);
 	return {
 		word: str(r.word),
@@ -40,8 +40,10 @@ function rowToEntry(r: Row): WordEntry {
 		numAnagrams: num(r.num_anagrams),
 		numUniqueLetters: num(r.num_unique_letters),
 		numVowels: num(r.num_vowels),
-		frontHooks: str(r.front_hooks),
-		backHooks: str(r.back_hooks),
+		// front_hooks/back_hooks are stored encoded (one code point per tile, like
+		// `tiles`), so decode to separate glyphs rather than a joined string.
+		frontHooks: alphabet.decodeToGlyphs(str(r.front_hooks)),
+		backHooks: alphabet.decodeToGlyphs(str(r.back_hooks)),
 		isFrontHook: bool(r.is_front_hook),
 		isBackHook: bool(r.is_back_hook),
 		playability: numOrNull(r.playability),
@@ -82,10 +84,10 @@ function orderClause({ column, direction }: SearchSort): string {
 	return column === 'word' ? primary : `${primary}, word ASC`;
 }
 
-/** Per-letter occurrence counts of `letters`, e.g. "EEN" -> {E:2, N:1}. */
-function letterCounts(letters: string): Map<string, number> {
+/** Per-glyph occurrence counts of tokenized tiles, e.g. [E,E,N] -> {E:2, N:1}. */
+function tileCounts(tiles: readonly Tile[]): Map<string, number> {
 	const counts = new Map<string, number>();
-	for (const letter of letters) counts.set(letter, (counts.get(letter) ?? 0) + 1);
+	for (const t of tiles) counts.set(t.glyph, (counts.get(t.glyph) ?? 0) + 1);
 	return counts;
 }
 
@@ -95,7 +97,16 @@ interface CompiledClause {
 	params: SqlValue[];
 }
 
-function compileCondition(condition: SearchCondition): CompiledClause | null {
+// A rack search ("anagram", "subanagram") treats "?" as a blank standing for any
+// one tile, and "[...]" as a restricted choice among several tiles — each is
+// one wild slot needing enumeration. Cap how many a query can have, so a
+// wildcard-heavy rack can't blow up the enumeration; covers Zyzzyva's own
+// documented examples (e.g. two "[...]" classes, as in "Z[AEIOU][AEIOU]") with
+// room for blanks alongside them. "*" is unbounded but is expressed as a
+// length comparison, so it needs no cap.
+const MAX_WILD_SLOTS = 4;
+
+function compileCondition(alphabet: Alphabet, condition: SearchCondition): CompiledClause | null {
 	if (condition.kind === 'range') {
 		const column = RANGE_COLUMN[condition.type];
 		if (condition.min === condition.max) {
@@ -110,50 +121,89 @@ function compileCondition(condition: SearchCondition): CompiledClause | null {
 	switch (condition.type) {
 		case 'pattern': {
 			if (!value) return null;
-			return { sql: not ? 'word NOT GLOB ?' : 'word GLOB ?', params: [value] };
+			// Matched against the encoded `tiles` column (one code point per tile), so
+			// "?" means one tile and a multi-character glyph like Spanish "CH" is a
+			// single match unit, never its component letters.
+			const encoded = alphabet.encodePattern(value);
+			return { sql: not ? 'tiles NOT GLOB ?' : 'tiles GLOB ?', params: [encoded] };
 		}
 		case 'anagram': {
-			// "?" is one blank and "*" is any number of blanks: an anagram with wild
-			// tiles is a word containing every fixed letter (with multiplicity), with
-			// the blank slots left unconstrained. "*" lifts the length to a minimum;
-			// without it the tile count is exact. No blanks at all keeps the fast,
-			// index-backed alphagram lookup.
-			const { fixed, blanks, open } = splitRack(value);
-			if (!fixed && blanks === 0 && !open) return null;
-			if (blanks === 0 && !open) return { sql: 'alphagram = ?', params: [alphagram(fixed)] };
-			const clauses = [`length ${open ? '>=' : '='} ?`];
-			const params: SqlValue[] = [fixed.length + blanks];
-			for (const [letter, n] of letterCounts(fixed)) {
-				clauses.push('word GLOB ?');
-				params.push('*' + `${letter}*`.repeat(n));
+			// "?" is one blank (any tile) and "[...]" is a restricted choice (any
+			// tile from that set) — both are exactly one slot, matching Zyzzyva's
+			// Anagram Match wildcards. No wildcards at all keeps the fast,
+			// index-backed alphagram lookup; a closed (non-"*") rack with wildcards
+			// enumerates every way to fill them into an exact-alphagram IN-list,
+			// same strategy as `subanagram` below. "*" makes the rack open-ended —
+			// any number of further tiles beyond what's specified — which can't be
+			// enumerated by length, so it falls back to a length/GLOB query.
+			const { slots, open } = alphabet.tokenizeRack(value);
+			if (slots.length === 0 && !open) return null;
+
+			if (!open) {
+				const grams = alphabet.anagramAlphagrams(value, MAX_WILD_SLOTS);
+				if (!grams || grams.length === 0) return null;
+				const inList = grams.map((g) => `'${g}'`).join(', ');
+				return { sql: `alphagram IN (${inList})`, params: [] };
+			}
+
+			const fixed = slots.filter((s) => s.kind === 'tile').map((s) => s.tile);
+			const clauses = ['length >= ?'];
+			const params: SqlValue[] = [slots.length];
+			for (const [glyph, n] of tileCounts(fixed)) {
+				clauses.push('tiles GLOB ?');
+				const code = alphabet.encodeGlyph(glyph)!;
+				params.push('*' + `${code}*`.repeat(n));
+			}
+			// Group identical classes together, so "Z[AEIOU][AEIOU]*" requires two
+			// distinct vowel occurrences (one glob match point per "[...]"), not
+			// the same one twice.
+			const classGroups = new Map<string, number>();
+			for (const slot of slots) {
+				if (slot.kind !== 'class') continue;
+				const codes = slot.choices
+					.map((t) => alphabet.encodeGlyph(t.glyph)!)
+					.sort()
+					.join('');
+				classGroups.set(codes, (classGroups.get(codes) ?? 0) + 1);
+			}
+			for (const [codes, n] of classGroups) {
+				clauses.push('tiles GLOB ?');
+				params.push('*' + `[${codes}]*`.repeat(n));
 			}
 			return { sql: clauses.join(' AND '), params };
 		}
 		case 'subanagram': {
-			// Each "?" is a wild tile that may stand for any letter or go unused. "*"
-			// is ignored here: unlimited blanks would make every word a subanagram.
-			const grams = subanagramTargets(value);
+			// Each "?" or "[...]" is a wild slot that may stand for any matching
+			// tile or go unused. "*" is ignored here: unlimited extra tiles would
+			// make every word a subanagram.
+			const grams = alphabet.subanagramAlphagrams(value, MAX_WILD_SLOTS);
 			if (grams.length === 0) return null;
-			// Alphagrams are [A-Z] only, so inline them as literals: a blanked rack can
-			// produce more targets than SQLite allows as bound parameters.
+			// Alphagrams are tile glyphs only (no quotes), so inline them as literals:
+			// a wildcard-heavy rack can produce more targets than SQLite allows as
+			// bound parameters.
 			const inList = grams.map((g) => `'${g}'`).join(', ');
 			return { sql: `alphagram IN (${inList})`, params: [] };
 		}
 		case 'includeLetters': {
-			const counts = letterCounts(value.replace(/[?*]/g, ''));
+			// Zyzzyva's IncludeLetters takes the search text completely literally —
+			// no "?"/"*"/"[...]" wildcard meaning — so this uses plain `tokenize`,
+			// not the rack parser the other conditions use.
+			const tiles = alphabet.tokenize(value);
+			const counts = tileCounts(tiles);
 			if (counts.size === 0) return null;
-			// Exclude: contain none of these letters. Include: contain at least n of
-			// each — "*E*E*" matches two E's anywhere. Both are pure SQL (GLOB), so
-			// membership is decided entirely in the query, multiplicity included.
+			// Exclude: contain none of these tiles. Include: contain at least n of
+			// each — "*E*E*" matches two E's anywhere. Both are pure SQL (GLOB) over
+			// the encoded `tiles` column, so membership is decided entirely in the
+			// query, multiplicity and tile boundaries both respected.
 			if (not) {
 				return {
-					sql: [...counts.keys()].map(() => 'word NOT GLOB ?').join(' AND '),
-					params: [...counts.keys()].map((letter) => `*${letter}*`)
+					sql: [...counts.keys()].map(() => 'tiles NOT GLOB ?').join(' AND '),
+					params: [...counts.keys()].map((glyph) => `*${alphabet.encodeGlyph(glyph)}*`)
 				};
 			}
 			return {
-				sql: [...counts.keys()].map(() => 'word GLOB ?').join(' AND '),
-				params: [...counts].map(([letter, n]) => '*' + `${letter}*`.repeat(n))
+				sql: [...counts.keys()].map(() => 'tiles GLOB ?').join(' AND '),
+				params: [...counts].map(([glyph, n]) => '*' + `${alphabet.encodeGlyph(glyph)}*`.repeat(n))
 			};
 		}
 		case 'definition': {
@@ -170,71 +220,6 @@ function compileCondition(condition: SearchCondition): CompiledClause | null {
 			};
 		}
 	}
-}
-
-// A rack search ("anagram", "subanagram") treats "?" as a blank standing for any
-// one letter, and "*" as any number of blanks. Realistic racks hold at most two
-// "?" blanks; cap there so a blank-heavy query can't blow up the enumeration. "*"
-// is unbounded but is expressed as a length comparison, so it needs no cap.
-const MAX_BLANKS = 2;
-
-/**
- * Split a rack into its A–Z fixed letters, its (capped) count of "?" blanks, and
- * whether a "*" (any number of blanks) is present.
- */
-function splitRack(value: string): { fixed: string; blanks: number; open: boolean } {
-	let fixed = '';
-	let blanks = 0;
-	let open = false;
-	for (const ch of value) {
-		if (ch === '?') blanks++;
-		else if (ch === '*') open = true;
-		else if (ch >= 'A' && ch <= 'Z') fixed += ch;
-	}
-	return { fixed, blanks: Math.min(blanks, MAX_BLANKS), open };
-}
-
-/** Every length-`n` multiset of the alphabet, each as a sorted letter string. */
-function letterMultisets(n: number): string[] {
-	const out: string[] = [];
-	const build = (start: number, acc: string) => {
-		if (acc.length === n) {
-			out.push(acc);
-			return;
-		}
-		for (let i = start; i < ALPHABET.length; i++) build(i, acc + ALPHABET[i]);
-	};
-	build(0, '');
-	return out;
-}
-
-/** Sub-multiset alphagrams of a rack, with each "?" filled by any one letter. */
-function subanagramTargets(value: string): string[] {
-	const { fixed, blanks } = splitRack(value);
-	if (blanks === 0) return subAlphagrams(fixed);
-	const grams = new Set<string>();
-	for (const fill of letterMultisets(blanks)) {
-		for (const gram of subAlphagrams(fixed + fill)) grams.add(gram);
-	}
-	return [...grams];
-}
-
-/** Every non-empty sub-multiset of `letters`, as alphagrams (letters sorted). */
-function subAlphagrams(letters: string): string[] {
-	const counts = letterCounts(letters);
-	const distinct = [...counts.keys()].sort();
-
-	const grams: string[] = [];
-	const build = (index: number, acc: string) => {
-		if (index === distinct.length) {
-			if (acc) grams.push(acc);
-			return;
-		}
-		const letter = distinct[index];
-		for (let k = 0; k <= counts.get(letter)!; k++) build(index + 1, acc + letter.repeat(k));
-	};
-	build(0, '');
-	return grams;
 }
 
 /**
@@ -267,7 +252,8 @@ class WordList implements WordWindow {
 export class SqliteLexiconEngine implements LexiconEngine {
 	constructor(
 		readonly name: string,
-		private readonly db: Database
+		private readonly db: Database,
+		readonly alphabet: Alphabet
 	) {}
 
 	isValid(word: string): boolean {
@@ -276,53 +262,81 @@ export class SqliteLexiconEngine implements LexiconEngine {
 
 	lookup(word: string): WordEntry | undefined {
 		const row = this.db.selectObject(`SELECT ${COLUMNS} FROM words WHERE word = ?`, [word.toUpperCase()]);
-		return row ? rowToEntry(row) : undefined;
+		return row ? rowToEntry(this.alphabet, row) : undefined;
 	}
 
 	anagrams(letters: string): WordEntry[] {
 		const rows = this.db.selectObjects(
 			`SELECT ${COLUMNS} FROM words WHERE alphagram = ? ORDER BY probability_order0`,
-			[alphagram(letters.toUpperCase())]
+			[this.alphabet.alphagram(letters.toUpperCase())]
 		);
-		return rows.map(rowToEntry);
+		return rows.map((r) => rowToEntry(this.alphabet, r));
 	}
 
 	search(spec: SearchSpec): SearchResult {
 		const compiled = spec.conditions
-			.map(compileCondition)
+			.map((c) => compileCondition(this.alphabet, c))
 			.filter((c): c is CompiledClause => c !== null);
 		if (compiled.length === 0) {
 			return {
 				words: new WordList([], () => []),
 				columns: { word: 0, frontHooks: 0, backHooks: 0 },
-				capped: false
+				capped: false,
+				hookChars: []
 			};
 		}
 
 		const where = compiled.map((c) => `(${c.sql})`).join(' AND ');
-		const params = compiled.flatMap((c) => c.params);
+		// A clause like "subanagram" inlines its values as SQL literals rather than
+		// binding them (see compileCondition), so `params` can end up empty even
+		// though `where` is non-trivial. sqlite-wasm rejects a non-empty bind array
+		// for a statement with zero "?" placeholders, so pass undefined instead of
+		// an empty array — never an empty array on a paramless query.
+		const allParams = compiled.flatMap((c) => c.params);
+		const params = allParams.length > 0 ? allParams : undefined;
 
 		// Every condition is decided in SQL, so the query is authoritative: fetch
 		// one past the limit to learn whether more matched. Only the ordered word
-		// strings are pulled here — full rows hydrate lazily per visible slice.
+		// strings (plus each row's cheap hook *lengths*, for per-row layout — see
+		// `hookChars`) are pulled here; full rows still hydrate lazily per slice.
 		const sqlLimit = spec.limit !== undefined ? ` LIMIT ${spec.limit + 1}` : '';
-		let words = this.db
-			.selectObjects(
-				`SELECT word FROM words WHERE ${where} ORDER BY ${orderClause(spec.sort)}${sqlLimit}`,
-				params
-			)
-			.map((r) => r.word as string);
+		const rows = this.db.selectObjects(
+			`SELECT word, LENGTH(front_hooks) fh, LENGTH(back_hooks) bh FROM words
+			 WHERE ${where} ORDER BY ${orderClause(spec.sort)}${sqlLimit}`,
+			params
+		);
+		let words = rows.map((r) => r.word as string);
+		let hookChars = rows.map((r) =>
+			this.hookWidth(Math.max(r.fh as number, r.bh as number))
+		);
 
 		const capped = spec.limit !== undefined && words.length > spec.limit;
-		if (capped) words = words.slice(0, spec.limit);
+		if (capped) {
+			words = words.slice(0, spec.limit);
+			hookChars = hookChars.slice(0, spec.limit);
+		}
 
 		const columns = this.columnWidths(where, params);
-		return { words: new WordList(words, (batch) => this.entriesFor(batch)), columns, capped };
+		return {
+			words: new WordList(words, (batch) => this.entriesFor(batch)),
+			columns,
+			capped,
+			hookChars
+		};
+	}
+
+	// front_hooks/back_hooks are stored encoded, so LENGTH() counts tiles, not
+	// display characters. For a single-character alphabet (the common case)
+	// that's already the exact display width. A multi-character alphabet joins
+	// its glyphs with a separator for display (see joinHooks), so size for the
+	// worst case: every tile at the widest glyph, plus its separator.
+	private hookWidth(tileCount: number): number {
+		return this.alphabet.hasMultiCharTiles ? tileCount * (this.alphabet.maxGlyphLength + 1) : tileCount;
 	}
 
 	/** Widest word and hook strings among matches, to size table columns without
 	 * truncating them. */
-	private columnWidths(where: string, params: SqlValue[]): ColumnWidths {
+	private columnWidths(where: string, params: SqlValue[] | undefined): ColumnWidths {
 		const row = this.db.selectObject(
 			`SELECT MAX(LENGTH(word)) w, MAX(LENGTH(front_hooks)) f, MAX(LENGTH(back_hooks)) b
 			 FROM words WHERE ${where}`,
@@ -330,8 +344,8 @@ export class SqliteLexiconEngine implements LexiconEngine {
 		);
 		return {
 			word: (row?.w as number) ?? 0,
-			frontHooks: (row?.f as number) ?? 0,
-			backHooks: (row?.b as number) ?? 0
+			frontHooks: this.hookWidth((row?.f as number) ?? 0),
+			backHooks: this.hookWidth((row?.b as number) ?? 0)
 		};
 	}
 
@@ -341,6 +355,6 @@ export class SqliteLexiconEngine implements LexiconEngine {
 		const holes = words.map(() => '?').join(', ');
 		return this.db
 			.selectObjects(`SELECT ${COLUMNS} FROM words WHERE word IN (${holes})`, words)
-			.map(rowToEntry);
+			.map((r) => rowToEntry(this.alphabet, r));
 	}
 }

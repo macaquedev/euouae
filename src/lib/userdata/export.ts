@@ -5,6 +5,8 @@
 // Reference: Zyzzyva's WordTableView::exportFile / getExportStrings.
 
 import type { LexiconEngine, WordEntry } from '$lib/lexicon/types';
+import { alphagram } from '$lib/lexicon/letters';
+import { joinHooks } from '$lib/text';
 
 export type ExportFormat =
 	| 'one-per-line'
@@ -72,12 +74,20 @@ export function formatUsesAttributes(format: ExportFormat): boolean {
 const PARENT_HOOK_CHAR = '·';
 const TWO_COLUMN_ANAGRAM_PADDING = 3;
 
-function alphagramOf(word: string): string {
-	return [...word].sort().join('');
-}
-
 function lettersOnly(s: string): string {
 	return s.replace(/[^A-Za-z]/g, '');
+}
+
+// Hooks are stored as separate tile glyphs (see WordEntry.frontHooks), never a
+// joined string — a multi-character tile glyph (e.g. Spanish "CH") would
+// otherwise be indistinguishable from two single-character ones next to it.
+// `multiChar` mirrors the active lexicon's `alphabet.hasMultiCharTiles`: a
+// single-character alphabet keeps today's tight, letters-only output; a
+// multi-character one is space-separated, which `lettersOnly` would collapse
+// back into the exact ambiguity being avoided, so it's skipped in that case.
+function hooksField(hooks: readonly string[], multiChar: boolean): string {
+	const joined = joinHooks(hooks, multiChar);
+	return multiChar ? joined : lettersOnly(joined);
 }
 
 function num(n: number | null | undefined): string {
@@ -111,7 +121,8 @@ function wordField(
 function fieldsFor(
 	word: string,
 	entry: WordEntry | undefined,
-	attributes: readonly ExportAttribute[]
+	attributes: readonly ExportAttribute[],
+	multiChar: boolean
 ): string[] {
 	const innerHooks = attributes.includes('inner-hooks');
 	const symbols = attributes.includes('lexicon-symbols');
@@ -122,16 +133,16 @@ function fieldsFor(
 				fields.push(wordField(word, entry, innerHooks, symbols));
 				break;
 			case 'alphagram':
-				fields.push(entry?.alphagram ?? alphagramOf(word));
+				fields.push(entry?.alphagram ?? alphagram(word));
 				break;
 			case 'definition':
 				fields.push((entry?.definition ?? '').replace(/\n/g, ' / '));
 				break;
 			case 'front-hooks':
-				fields.push(lettersOnly(entry?.frontHooks ?? ''));
+				fields.push(hooksField(entry?.frontHooks ?? [], multiChar));
 				break;
 			case 'back-hooks':
-				fields.push(lettersOnly(entry?.backHooks ?? ''));
+				fields.push(hooksField(entry?.backHooks ?? [], multiChar));
 				break;
 			case 'probability-order':
 				fields.push(num(entry?.probabilityOrder?.[0]));
@@ -155,7 +166,7 @@ interface Row {
 function groupByAlphagram(rows: Row[]): Map<string, Row[]> {
 	const groups = new Map<string, Row[]>();
 	for (const row of rows) {
-		const key = row.entry?.alphagram ?? alphagramOf(row.word);
+		const key = row.entry?.alphagram ?? alphagram(row.word);
 		const bucket = groups.get(key);
 		if (bucket) bucket.push(row);
 		else groups.set(key, [row]);
@@ -175,9 +186,12 @@ export function buildExport(
 	attributes: readonly ExportAttribute[]
 ): string {
 	const rows: Row[] = words.map((word) => ({ word, entry: engine?.lookup(word) }));
+	const multiChar = engine?.alphabet.hasMultiCharTiles ?? false;
 
 	if (format === 'one-per-line') {
-		return rows.map((r) => fieldsFor(r.word, r.entry, attributes).join('\t')).join('\n') + '\n';
+		return (
+			rows.map((r) => fieldsFor(r.word, r.entry, attributes, multiChar).join('\t')).join('\n') + '\n'
+		);
 	}
 
 	const groups = groupByAlphagram(rows);
@@ -192,7 +206,7 @@ export function buildExport(
 		for (const key of keys) {
 			out += `Q: ${key}\n`;
 			for (const row of groups.get(key)!) {
-				out += `A: ${fieldsFor(row.word, row.entry, attributes).join(' ')}\n`;
+				out += `A: ${fieldsFor(row.word, row.entry, attributes, multiChar).join(' ')}\n`;
 			}
 			out += '\n';
 		}
@@ -204,7 +218,7 @@ export function buildExport(
 	const fieldsByKey = new Map<string, string[][]>();
 	let fieldCount = 0;
 	for (const key of keys) {
-		const lines = groups.get(key)!.map((r) => fieldsFor(r.word, r.entry, attributes));
+		const lines = groups.get(key)!.map((r) => fieldsFor(r.word, r.entry, attributes, multiChar));
 		fieldsByKey.set(key, lines);
 		if (lines.length) fieldCount = lines[0].length;
 	}

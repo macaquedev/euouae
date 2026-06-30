@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { lexicon } from '$lib/lexicon/store.svelte';
 	import { ListStore, parseWords, type ListSummary } from '$lib/userdata/lists';
 	import { buildExport, type ExportAttribute, type ExportFormat } from '$lib/userdata/export';
+	import { plural } from '$lib/text';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import ExportDialog from '$lib/components/ExportDialog.svelte';
 
@@ -63,12 +64,31 @@
 
 	onMount(async () => {
 		store = await ListStore.open();
-		refresh();
 	});
 
 	function refresh() {
 		if (store) lists = store.summaries(lexicon.name);
 	}
+
+	// Lists are scoped to the active lexicon. Reload them when the store opens or the
+	// lexicon switches, dropping any in-progress selection (compose target, rename,
+	// pending dialog) that pointed at the lexicon we just left.
+	let activeLex: string | null = null;
+	$effect(() => {
+		const lex = lexicon.name;
+		const ready = store;
+		untrack(() => {
+			if (!ready) return;
+			if (lex !== activeLex) {
+				activeLex = lex;
+				target = 'new';
+				editingId = null;
+				confirmAction = null;
+				exportTarget = null;
+			}
+			lists = ready.summaries(lex);
+		});
+	});
 
 	const canSave = $derived(
 		words.length > 0 &&
@@ -82,7 +102,7 @@
 		const dest = target === 'new' ? `new list “${name.trim()}”` : `“${targetName}”`;
 		confirmAction = {
 			title: 'Add words?',
-			message: `Add ${n} word${n === 1 ? '' : 's'} to ${dest}?`,
+			message: `Add ${plural(n)} to ${dest}?`,
 			confirmLabel: 'Add',
 			run: save
 		};
@@ -120,7 +140,7 @@
 	function requestDelete(list: ListSummary) {
 		confirmAction = {
 			title: 'Delete list?',
-			message: `This permanently deletes “${list.name}” (${list.count} word${list.count === 1 ? '' : 's'}). Type the list name to confirm.`,
+			message: `This permanently deletes “${list.name}” (${plural(list.count)}). Type the list name to confirm.`,
 			confirmLabel: 'Delete',
 			danger: true,
 			requireText: list.name,
@@ -234,7 +254,7 @@
 				<input type="file" accept=".txt,text/plain" onchange={importFile} hidden />
 			</label>
 			<span class="muted" class:warn={invalidWords.length > 0}>
-				{words.length} word{words.length === 1 ? '' : 's'}
+				{plural(words.length)}
 				{#if invalidWords.length}· {invalidWords.length} not in {lexicon.name}{:else if words.length}· all in {lexicon.name}{/if}
 			</span>
 			<button class="primary" onclick={requestSave} disabled={!canSave}>

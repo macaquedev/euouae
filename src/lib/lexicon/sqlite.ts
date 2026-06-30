@@ -8,13 +8,16 @@ import { sqliteRuntime } from '$lib/sqlite/runtime';
 
 /** Fetch a SQLite file and open it as an in-memory, read-only database. */
 export async function openSerializedDb(url: string): Promise<Database> {
-	const sqlite3 = await sqliteRuntime();
-
 	const response = await fetch(url);
 	if (!response.ok) {
 		throw new Error(`Failed to fetch lexicon "${url}": ${response.status} ${response.statusText}`);
 	}
-	const bytes = new Uint8Array(await response.arrayBuffer());
+	return openSerializedDbBytes(new Uint8Array(await response.arrayBuffer()));
+}
+
+/** Open already-fetched SQLite bytes as an in-memory, read-only database. */
+export async function openSerializedDbBytes(bytes: Uint8Array): Promise<Database> {
+	const sqlite3 = await sqliteRuntime();
 
 	const db = new sqlite3.oo1.DB();
 	const ptr = sqlite3.wasm.allocFromTypedArray(bytes);

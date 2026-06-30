@@ -27,8 +27,20 @@ const MAX_WORD_LENGTH = 15;
 
 export const CONDITION_TYPES: readonly ConditionMeta[] = [
 	{ kind: 'string', type: 'pattern', label: 'Pattern', placeholder: 'C?T or B*[AEIOU]', negatable: true },
-	{ kind: 'string', type: 'anagram', label: 'Anagram of', placeholder: 'AEINR?* (? = blank, * = any)', negatable: false },
-	{ kind: 'string', type: 'subanagram', label: 'Subanagram of', placeholder: 'RETINA? (? = blank)', negatable: false },
+	{
+		kind: 'string',
+		type: 'anagram',
+		label: 'Anagram of',
+		placeholder: 'AEINR?[ST]* (? = blank, [..] = one of, * = any)',
+		negatable: false
+	},
+	{
+		kind: 'string',
+		type: 'subanagram',
+		label: 'Subanagram of',
+		placeholder: 'RETINA?[ST] (? = blank, [..] = one of)',
+		negatable: false
+	},
 	{ kind: 'string', type: 'includeLetters', label: 'Includes letters', placeholder: 'QZ', negatable: true },
 	{ kind: 'string', type: 'definition', label: 'Definition contains', placeholder: 'bird', negatable: true },
 	{ kind: 'string', type: 'partOfSpeech', label: 'Part of speech', placeholder: 'n', negatable: true },

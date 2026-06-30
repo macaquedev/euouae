@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import { lexicon } from '$lib/lexicon/store.svelte';
@@ -19,23 +19,41 @@
 	let starting = $state(false);
 	let inputEl = $state<HTMLInputElement | null>(null);
 	let listDecks = $state<Deck[]>([]);
+	let listStore: ListStore | null = null;
 
 	const deckGroups = $derived(
 		listDecks.length ? [{ title: 'Saved lists', decks: listDecks }] : []
 	);
 
-	onMount(async () => {
-		const store = await ListStore.open();
-		listDecks = store
-			.summaries(lexicon.name)
-			.map((l) => listDeck(l.id, l.name, store.words(l.id)));
+	async function loadDecks(lex: string) {
+		listStore ??= await ListStore.open();
+		if (lex !== activeLex) return; // a newer switch already superseded this load
+		listDecks = listStore
+			.summaries(lex)
+			.map((l) => listDeck(l.id, l.name, listStore!.words(l.id)));
+	}
 
-		// Deep link from the Lists page: ?deck=<id> auto-starts that deck.
-		const wanted = page.url.searchParams.get('deck');
-		if (wanted) {
-			const deck = listDecks.find((d) => d.id === wanted);
-			if (deck) start(deck);
-		}
+	// Decks belong to the active lexicon. Switching lexicons drops any in-progress
+	// session (committing its pending grade) and reloads the new lexicon's decks, so
+	// the study panel never shows a stale list from the lexicon we just left.
+	let activeLex: string | null = null;
+	$effect(() => {
+		const lex = lexicon.name;
+		untrack(() => {
+			if (lex === activeLex) return;
+			const first = activeLex === null;
+			activeLex = lex;
+			if (!first) quit();
+			void loadDecks(lex).then(() => {
+				if (!first) return;
+				// Deep link from the Lists page: ?deck=<id> auto-starts that deck.
+				const wanted = page.url.searchParams.get('deck');
+				if (wanted) {
+					const deck = listDecks.find((d) => d.id === wanted);
+					if (deck) start(deck);
+				}
+			});
+		});
 	});
 
 	async function start(deck: Deck) {

@@ -2,6 +2,8 @@
 // precomputed columns of Zyzzyva's lexicon DB so we never recompute
 // correctness-critical data at runtime — the lexicon is a read-only oracle.
 
+import type { Alphabet } from './alphabet';
+
 /** Blanks assumed in the bag when ranking a word by draw probability. */
 export type BlankCount = 0 | 1 | 2;
 
@@ -19,10 +21,13 @@ export interface WordEntry {
 	readonly numUniqueLetters: number;
 	readonly numVowels: number;
 
-	/** Letters that make a valid word when placed before this one. */
-	readonly frontHooks: string;
-	/** Letters that make a valid word when placed after this one. */
-	readonly backHooks: string;
+	/** Tiles that make a valid word when placed before this one, in collation
+	 *  order — kept as separate glyphs (never joined into one string), since a
+	 *  multi-character tile glyph would otherwise be indistinguishable from two
+	 *  single-character ones next to it. */
+	readonly frontHooks: readonly string[];
+	/** Tiles that make a valid word when placed after this one. */
+	readonly backHooks: readonly string[];
 	/** This word is itself the front hook of some longer word. */
 	readonly isFrontHook: boolean;
 	readonly isBackHook: boolean;
@@ -114,6 +119,14 @@ export interface SearchResult {
 	readonly columns: ColumnWidths;
 	/** True when `limit` was set and more words matched than it. */
 	readonly capped: boolean;
+	/**
+	 * Per-row display width (in ch) of the wider of that row's front/back hooks,
+	 * parallel to `words.words`. Cheap to fetch eagerly for every matched row
+	 * (just two integers, no hydration) so a view can size each row to only as
+	 * tall as *that* row's hooks need — not the widest hooks in the whole result
+	 * set stretching every row.
+	 */
+	readonly hookChars: readonly number[];
 }
 
 /**
@@ -123,6 +136,9 @@ export interface SearchResult {
 export interface LexiconEngine {
 	/** Lexicon identifier, e.g. "CSW24". */
 	readonly name: string;
+
+	/** The tile set this lexicon is built and queried with. */
+	readonly alphabet: Alphabet;
 
 	/** Judge primitive: is this exact word valid? Must be fast and infallible. */
 	isValid(word: string): boolean;

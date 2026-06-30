@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { fade, scale } from 'svelte/transition';
+	import { overlayDuration } from '$lib/motion';
 
 	interface Props {
 		title: string;
@@ -25,9 +26,7 @@
 		oncancel
 	}: Props = $props();
 
-	const reduce =
-		typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-	const dur = reduce ? 0 : 150;
+	const dur = overlayDuration();
 
 	let typed = $state('');
 	let inputEl = $state<HTMLInputElement | null>(null);

@@ -1,61 +1,44 @@
-// Canonical letter math for Collins/English Scrabble. These pure functions are
-// the single definition of each derived quantity, used by both the build pipeline
-// (to populate the lexicon) and the app at runtime, so the two can never drift.
+// Canonical letter math for English/Collins Scrabble, now thin wrappers over the
+// English Alphabet (see alphabet.ts / alphabets.ts) so the tile data lives in one
+// place. The build pipeline and the app both go through these, so the two can
+// never drift. A per-lexicon caller can use the Alphabet methods directly.
+
+import { ENGLISH } from './alphabets';
 
 /** Standard English/Collins tile values; blank is 0 and not listed. */
-export const TILE_VALUES: Readonly<Record<string, number>> = {
-	A: 1, E: 1, I: 1, O: 1, U: 1, L: 1, N: 1, S: 1, T: 1, R: 1,
-	D: 2, G: 2,
-	B: 3, C: 3, M: 3, P: 3,
-	F: 4, H: 4, V: 4, W: 4, Y: 4,
-	K: 5,
-	J: 8, X: 8,
-	Q: 10, Z: 10
-};
+export const TILE_VALUES: Readonly<Record<string, number>> = Object.fromEntries(
+	ENGLISH.tiles.map((t) => [t.glyph, t.value])
+);
 
 /** Vowels for `num_vowels`: A E I O U only (Y is not counted). */
-export const VOWELS: ReadonlySet<string> = new Set(['A', 'E', 'I', 'O', 'U']);
-
-/** Letters sorted ascending — the key that groups a word with its anagrams. */
-export function alphagram(word: string): string {
-	return [...word].sort().join('');
-}
-
-/** Sum of tile values for the word. */
-export function pointValue(word: string): number {
-	let total = 0;
-	for (const letter of word) total += TILE_VALUES[letter] ?? 0;
-	return total;
-}
-
-/** Count of A/E/I/O/U occurrences. */
-export function vowelCount(word: string): number {
-	let count = 0;
-	for (const letter of word) if (VOWELS.has(letter)) count++;
-	return count;
-}
-
-/** Number of distinct letters in the word. */
-export function uniqueLetterCount(word: string): number {
-	return new Set(word).size;
-}
+export const VOWELS: ReadonlySet<string> = new Set(
+	ENGLISH.tiles.filter((t) => t.vowel).map((t) => t.glyph)
+);
 
 /** Uppercase A–Z, in alphabet order; used when probing hooks. */
-export const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+export const ALPHABET = ENGLISH.tiles.map((t) => t.glyph).join('');
+
+/** Letters sorted ascending — the key that groups a word with its anagrams. */
+export const alphagram = (word: string): string => ENGLISH.alphagram(word);
+
+/** Sum of tile values for the word. */
+export const pointValue = (word: string): number => ENGLISH.pointValue(word);
+
+/** Count of A/E/I/O/U occurrences. */
+export const vowelCount = (word: string): number => ENGLISH.vowelCount(word);
+
+/** Number of distinct letters in the word. */
+export const uniqueLetterCount = (word: string): number => ENGLISH.uniqueTileCount(word);
 
 /**
  * Letters that form a valid word when prepended to `word`, given a membership
- * test. Returned in alphabet order, e.g. "bcfm" -> "BCFM".
+ * test. Returned in alphabet order, e.g. "bcfm" -> "BCFM". English tiles are
+ * always one character, so joining them is never ambiguous (unlike a general
+ * alphabet's `frontHooks`/`backHooks`, which return separate glyphs).
  */
-export function frontHooks(word: string, isWord: (w: string) => boolean): string {
-	let hooks = '';
-	for (const letter of ALPHABET) if (isWord(letter + word)) hooks += letter;
-	return hooks;
-}
+export const frontHooks = (word: string, isWord: (w: string) => boolean): string =>
+	ENGLISH.frontHooks(word, isWord).join('');
 
 /** Letters that form a valid word when appended to `word`. */
-export function backHooks(word: string, isWord: (w: string) => boolean): string {
-	let hooks = '';
-	for (const letter of ALPHABET) if (isWord(word + letter)) hooks += letter;
-	return hooks;
-}
+export const backHooks = (word: string, isWord: (w: string) => boolean): string =>
+	ENGLISH.backHooks(word, isWord).join('');

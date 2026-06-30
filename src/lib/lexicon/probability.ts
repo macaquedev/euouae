@@ -7,87 +7,72 @@
 // within a length by combinations[b] descending gives the probability order.
 
 import type { BlankCount, ByBlanks } from './types';
+import type { Alphabet } from './alphabet';
 
-/** English/Collins tile counts in a full bag; blanks handled separately. */
-export const TILE_FREQUENCIES: Readonly<Record<string, number>> = {
-	A: 9, B: 2, C: 2, D: 4, E: 12, F: 2, G: 3, H: 2, I: 9, J: 1, K: 1, L: 4, M: 2,
-	N: 6, O: 8, P: 2, Q: 1, R: 6, S: 4, T: 6, U: 4, V: 2, W: 2, X: 1, Y: 2, Z: 1
-};
-
-/** Number of blank tiles in a full bag. */
-export const BLANK_COUNT = 2;
-
-const MAX_FREQ = Math.max(...Object.values(TILE_FREQUENCIES));
-
-/** choose[n][k] = C(n, k), precomputed up to the largest tile frequency. */
-const choose: number[][] = (() => {
-	const table: number[][] = [];
-	for (let n = 0; n <= MAX_FREQ; n++) {
-		table[n] = [1];
-		for (let k = 1; k <= n; k++) {
-			table[n][k] = (table[n][k - 1] * (n - k + 1)) / k;
-		}
-	}
-	return table;
-})();
-
-/** C(freq, k), or 0 when k exceeds the available tiles. */
-function chooseTiles(freq: number, k: number): number {
-	return k <= freq ? choose[freq][k] : 0;
-}
-
-interface LetterCount {
+interface TileCount {
 	readonly freq: number;
 	count: number;
 }
 
-/** Distinct letters of `word` with their bag frequency and required count. */
-function letterCounts(word: string): LetterCount[] {
-	const byLetter = new Map<string, LetterCount>();
-	for (const letter of word) {
-		const existing = byLetter.get(letter);
-		if (existing) existing.count++;
-		else byLetter.set(letter, { freq: TILE_FREQUENCIES[letter] ?? 0, count: 1 });
-	}
-	return [...byLetter.values()];
-}
-
-/** Product of C(freq, count) across all letters for the current counts. */
-function combosForCounts(letters: LetterCount[]): number {
-	let product = 1;
-	for (const l of letters) product *= chooseTiles(l.freq, l.count);
-	return product;
-}
-
 /**
- * Cumulative draw combinations for the word, indexed by blanks allowed (0/1/2).
- * Faithful port of LetterBag::getNumCombinations.
+ * A draw-combinations calculator bound to one alphabet's bag. The C(n, k) table
+ * is built once for the bag's largest tile frequency, then reused for every word;
+ * each word is tokenized into tiles, so multi-character tiles (CH, LL) count as
+ * one. Faithful port of LetterBag::getNumCombinations.
  */
-export function combinations(word: string): ByBlanks {
-	const letters = letterCounts(word);
+export function combinationsFor(alphabet: Alphabet): (word: string) => ByBlanks {
+	const blankCount = alphabet.blankCount;
+	const maxFreq = Math.max(...alphabet.tiles.map((t) => t.frequency));
 
-	const noBlanks = combosForCounts(letters);
-
-	let oneBlank = 0;
-	for (const l of letters) {
-		l.count--;
-		oneBlank += chooseTiles(BLANK_COUNT, 1) * combosForCounts(letters);
-		l.count++;
+	const choose: number[][] = [];
+	for (let n = 0; n <= maxFreq; n++) {
+		choose[n] = [1];
+		for (let k = 1; k <= n; k++) choose[n][k] = (choose[n][k - 1] * (n - k + 1)) / k;
 	}
+	const chooseTiles = (freq: number, k: number): number => (k <= freq ? choose[freq][k] : 0);
 
-	let twoBlanks = 0;
-	for (let i = 0; i < letters.length; i++) {
-		letters[i].count--;
-		for (let j = i; j < letters.length; j++) {
-			if (letters[j].count === 0) continue;
-			letters[j].count--;
-			twoBlanks += chooseTiles(BLANK_COUNT, 2) * combosForCounts(letters);
-			letters[j].count++;
+	/** Distinct tiles of `word` with their bag frequency and required count. */
+	const tileCounts = (word: string): TileCount[] => {
+		const byGlyph = new Map<string, TileCount>();
+		for (const tile of alphabet.tokenize(word)) {
+			const existing = byGlyph.get(tile.glyph);
+			if (existing) existing.count++;
+			else byGlyph.set(tile.glyph, { freq: tile.frequency, count: 1 });
 		}
-		letters[i].count++;
-	}
+		return [...byGlyph.values()];
+	};
 
-	return { 0: noBlanks, 1: noBlanks + oneBlank, 2: noBlanks + oneBlank + twoBlanks };
+	const combosForCounts = (tiles: TileCount[]): number => {
+		let product = 1;
+		for (const t of tiles) product *= chooseTiles(t.freq, t.count);
+		return product;
+	};
+
+	return (word: string): ByBlanks => {
+		const tiles = tileCounts(word);
+		const noBlanks = combosForCounts(tiles);
+
+		let oneBlank = 0;
+		for (const t of tiles) {
+			t.count--;
+			oneBlank += chooseTiles(blankCount, 1) * combosForCounts(tiles);
+			t.count++;
+		}
+
+		let twoBlanks = 0;
+		for (let i = 0; i < tiles.length; i++) {
+			tiles[i].count--;
+			for (let j = i; j < tiles.length; j++) {
+				if (tiles[j].count === 0) continue;
+				tiles[j].count--;
+				twoBlanks += chooseTiles(blankCount, 2) * combosForCounts(tiles);
+				tiles[j].count++;
+			}
+			tiles[i].count++;
+		}
+
+		return { 0: noBlanks, 1: noBlanks + oneBlank, 2: noBlanks + oneBlank + twoBlanks };
+	};
 }
 
 interface RankableWord {

@@ -4,6 +4,7 @@
 	import { base } from '$app/paths';
 	import { NAV } from '$lib/keyboard/nav';
 	import { kbd } from '$lib/keyboard/ui.svelte';
+	import { overlayDuration } from '$lib/motion';
 
 	interface Command {
 		id: string;
@@ -14,9 +15,7 @@
 		run: () => void;
 	}
 
-	const reduce =
-		typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-	const dur = reduce ? 0 : 150;
+	const dur = overlayDuration();
 
 	let query = $state('');
 	let index = $state(0);
