@@ -9,6 +9,7 @@
 	import { ListStore } from '$lib/userdata/lists';
 	import { QuizSession, type QuizMethod, type QuizOrder } from '$lib/quiz/session.svelte';
 	import { TILE_VALUES } from '$lib/lexicon/letters';
+	import { plural } from '$lib/text';
 	import WordCard from '$lib/components/WordCard.svelte';
 	import Tile from '$lib/components/Tile.svelte';
 
@@ -204,8 +205,8 @@
 		</div>
 	{:else if session.total === 0}
 		<div class="empty panel">
-			{#if method === 'cardbox' && session.scheduledCount > 0}
-				<p>Nothing due right now — {session.scheduledCount} card{session.scheduledCount === 1 ? '' : 's'} scheduled for later.</p>
+			{#if session.scheduledCount > 0}
+				<p>Nothing due right now — {plural(session.scheduledCount, 'card')} scheduled for later.</p>
 			{:else}
 				<p>This deck has no questions.</p>
 			{/if}
