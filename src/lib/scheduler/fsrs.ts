@@ -18,11 +18,21 @@ const W = [
 ] as const;
 
 const DECAY = -0.5;
-// Chosen so retrievability hits exactly the request retention at t = stability.
+// The FSRS curve's fixed anchor: retrievability is exactly 0.9 at t = stability,
+// which is how stability is defined. Independent of REQUEST_RETENTION — the
+// interval formula converts stability to whatever retention we actually target.
 const FACTOR = 19 / 81;
+// Target recall at the moment a card comes due. Lower → longer intervals and
+// fewer reviews (more words covered, a little more forgetting); higher → shorter
+// intervals and tighter retention. 0.9 is FSRS's balanced default.
 const REQUEST_RETENTION = 0.9;
 const MIN_STABILITY = 0.01;
 const MAX_STABILITY = 36_500; // ~100 years, in days
+
+// A passed card never reschedules to the very next day, even when the model's
+// interval rounds down to 1 (e.g. a slow-but-correct recall). A lapse — negative
+// streak — is exempt, so a missed word still comes back tomorrow.
+const PASS_MIN_INTERVAL = 2;
 
 const ratingValue = (g: Grade): number =>
 	g === 'again' ? 1 : g === 'hard' ? 2 : g === 'good' ? 3 : 4;
@@ -124,11 +134,13 @@ export class FsrsScheduler implements Scheduler {
 	}
 
 	dueAt(state: CardState): number {
-		// Never studied under FSRS → due now. Otherwise due once retrievability
-		// would fall to the request retention: the stability interval out from the
-		// last review, snapped to the start of that day so it surfaces at 00:00.
+		// Never studied under FSRS → due now. Otherwise the stability interval out
+		// from the last review — floored for a passing card so it never lands the
+		// next day — snapped to the 4am day boundary.
 		if (state.stability === null || state.lastReview === null) return -Infinity;
-		return startOfDayAfter(state.lastReview, nextInterval(state.stability));
+		const interval = nextInterval(state.stability);
+		const floored = state.streak > 0 ? Math.max(PASS_MIN_INTERVAL, interval) : interval;
+		return startOfDayAfter(state.lastReview, floored);
 	}
 
 	isDue(state: CardState, now: Date): boolean {
