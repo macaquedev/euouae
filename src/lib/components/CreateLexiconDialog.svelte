@@ -692,7 +692,6 @@
 		border-bottom: 1px solid var(--line-strong);
 		border-radius: 0;
 		padding: 0.1rem 0;
-		outline: none;
 	}
 	.bag-name:focus {
 		border-bottom-color: var(--maple);
@@ -779,7 +778,6 @@
 		border-radius: var(--r-sm);
 		padding: 0.45rem 0.55rem;
 		font: inherit;
-		outline: none;
 		text-align: center;
 		transition: border-color var(--t-fast) var(--ease);
 	}

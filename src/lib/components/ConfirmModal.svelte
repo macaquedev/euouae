@@ -149,7 +149,6 @@
 		border-radius: var(--r-sm);
 		padding: 0.55rem 0.7rem;
 		font: inherit;
-		outline: none;
 		margin-bottom: var(--s4);
 	}
 	input:focus {

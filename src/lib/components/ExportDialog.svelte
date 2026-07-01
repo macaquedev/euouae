@@ -187,7 +187,6 @@
 		border-radius: var(--r-sm);
 		padding: 0.5rem 0.7rem;
 		font: inherit;
-		outline: none;
 	}
 	select:focus {
 		border-color: var(--maple);
