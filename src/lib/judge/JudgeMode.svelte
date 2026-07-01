@@ -3,6 +3,7 @@
 	import type { LexiconEngine } from '$lib/lexicon';
 	import { judgePlay, type Verdict } from '$lib/judge/judge';
 	import { enterKiosk, exitKiosk } from '$lib/platform/kiosk';
+	import { kbd } from '$lib/keyboard/ui.svelte';
 	import Tile from '$lib/components/Tile.svelte';
 
 	interface Props {
@@ -147,11 +148,15 @@
 		// Native fullscreen+on-top under Tauri, browser fullscreen otherwise. The
 		// overlay is the real lock, so judge mode holds even if fullscreen drops.
 		enterKiosk();
+		// Block global shortcuts (Ctrl+K, ?, g-then-key nav) so they can't open an
+		// overlay or navigate out from under a password-locked session.
+		kbd.lock();
 		inputEl?.focus();
 	});
 
 	onDestroy(() => {
 		exitKiosk();
+		kbd.unlock();
 		clearTimeout(resultClearTimer);
 		clearTimeout(resultLockTimer);
 		clearTimeout(exitTimer);

@@ -48,6 +48,10 @@
 	}
 
 	function onKeydown(event: KeyboardEvent) {
+		// A kiosk surface (Word Judge) owns the keyboard exclusively — no global
+		// shortcut may open an overlay or navigate out from under it.
+		if (kbd.locked) return;
+
 		// Command palette: reachable everywhere, even mid-typing.
 		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
 			event.preventDefault();
@@ -72,6 +76,11 @@
 		if (gPending) {
 			gPending = false;
 			clearTimeout(gTimer);
+			if (event.key.toLowerCase() === 'x') {
+				event.preventDefault();
+				kbd.openLexiconPicker();
+				return;
+			}
 			const item = NAV.find((n) => n.key === event.key.toLowerCase());
 			if (item) {
 				event.preventDefault();
@@ -123,7 +132,7 @@
 				aria-label="Open command palette"
 				title="Command palette"
 			>
-				<kbd class="kbd">⌘</kbd><kbd class="kbd">K</kbd>
+				<kbd class="kbd">Ctrl</kbd><kbd class="kbd">K</kbd>
 			</button>
 			<button class="help" onclick={() => kbd.openHelp()} aria-label="Keyboard shortcuts" title="Shortcuts">
 				?

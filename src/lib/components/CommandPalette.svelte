@@ -5,6 +5,7 @@
 	import { NAV } from '$lib/keyboard/nav';
 	import { kbd } from '$lib/keyboard/ui.svelte';
 	import { overlayDuration } from '$lib/motion';
+	import { lexicon } from '$lib/lexicon/store.svelte';
 
 	interface Command {
 		id: string;
@@ -30,6 +31,14 @@
 			shortcut: ['g', n.key],
 			run: () => goto(`${base}/${n.href}`)
 		})),
+		{
+			id: 'lexicon-switch',
+			label: 'Switch lexicon',
+			hint: `Currently ${lexicon.name}`,
+			group: 'Lexicon',
+			shortcut: ['g', 'x'],
+			run: () => kbd.openLexiconPicker()
+		},
 		{
 			id: 'help',
 			label: 'Keyboard shortcuts',
@@ -57,8 +66,8 @@
 	});
 
 	function run(cmd: Command) {
-		if (cmd.id === 'help') {
-			cmd.run(); // openHelp swaps overlays itself
+		if (cmd.id === 'help' || cmd.id === 'lexicon-switch') {
+			cmd.run(); // these swap overlays themselves
 		} else {
 			kbd.close();
 			cmd.run();
@@ -92,7 +101,7 @@
 		transition:scale={{ duration: dur, start: 0.97, opacity: 0 }}
 	>
 		<div class="search">
-			<span class="prompt" aria-hidden="true">⌘</span>
+			<span class="prompt" aria-hidden="true">&gt;</span>
 			<input
 				bind:this={inputEl}
 				bind:value={query}
@@ -230,6 +239,7 @@
 		gap: 0.25rem;
 	}
 	.empty {
+		display: block;
 		padding: var(--s4);
 		color: var(--ink-faint);
 		text-align: center;

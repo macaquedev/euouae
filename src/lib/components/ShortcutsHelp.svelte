@@ -15,14 +15,17 @@
 		{
 			title: 'Anywhere',
 			rows: [
-				{ keys: ['⌘', 'K'], desc: 'Open the command palette' },
+				{ keys: ['Ctrl', 'K'], desc: 'Open the command palette' },
 				{ keys: ['?'], desc: 'Show this help' },
 				{ keys: ['Esc'], desc: 'Close a dialog or clear input' }
 			]
 		},
 		{
 			title: 'Jump to',
-			rows: NAV.map((n) => ({ keys: ['g', n.key], desc: n.label }))
+			rows: [
+				...NAV.map((n) => ({ keys: ['g', n.key], desc: n.label })),
+				{ keys: ['g', 'x'], desc: 'Switch lexicon' }
+			]
 		},
 		{
 			title: 'On a page',

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fade, scale } from 'svelte/transition';
 	import { overlayDuration } from '$lib/motion';
+	import { trapFocus } from '$lib/keyboard/focusTrap';
 
 	interface Props {
 		title: string;
@@ -56,12 +57,13 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="overlay" transition:fade={{ duration: dur }}>
-	<button class="backdrop" aria-label={cancelLabel} onclick={oncancel}></button>
+	<button class="backdrop" tabindex="-1" aria-label={cancelLabel} onclick={oncancel}></button>
 	<div
 		class="modal"
 		role="dialog"
 		aria-modal="true"
 		aria-label={title}
+		use:trapFocus
 		transition:scale={{ duration: dur, start: 0.97, opacity: 0 }}
 	>
 		<h2>{title}</h2>

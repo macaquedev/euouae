@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fade, scale } from 'svelte/transition';
 	import { overlayDuration } from '$lib/motion';
+	import { trapFocus } from '$lib/keyboard/focusTrap';
 	import { ALPHABETS, ENGLISH } from '$lib/lexicon/alphabets';
 	import { Alphabet, type AlphabetSpec } from '$lib/lexicon/alphabet';
 	import { buildCustomLexicon } from '$lib/lexicon/customBuild';
@@ -241,12 +242,18 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="overlay" transition:fade={{ duration: dur }}>
-	<button class="backdrop" aria-label="Cancel" onclick={() => !building && oncancel()}></button>
+	<button
+		class="backdrop"
+		tabindex="-1"
+		aria-label="Cancel"
+		onclick={() => !building && oncancel()}
+	></button>
 	<div
 		class="modal"
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="lex-title"
+		use:trapFocus
 		transition:scale={{ duration: dur, start: 0.97, opacity: 0 }}
 	>
 		<header class="head">

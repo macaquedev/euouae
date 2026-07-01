@@ -3,15 +3,16 @@
 	import { overlayDuration } from '$lib/motion';
 	import { lexicon } from '$lib/lexicon/store.svelte';
 	import { deleteCustomLexicon } from '$lib/lexicon/registry';
+	import { kbd } from '$lib/keyboard/ui.svelte';
+	import { trapFocus } from '$lib/keyboard/focusTrap';
 	import CreateLexiconDialog from './CreateLexiconDialog.svelte';
 	import ConfirmModal from './ConfirmModal.svelte';
 
 	const dur = overlayDuration();
 
-	let open = $state(false);
 	let showCreate = $state(false);
 	let pendingDelete = $state<string | null>(null);
-	let container = $state<HTMLElement | null>(null);
+	let menuEl = $state<HTMLDivElement | null>(null);
 
 	const status = $derived(lexicon.error ? 'error' : lexicon.engine ? 'ready' : 'loading');
 	const bundled = $derived(lexicon.available.filter((l) => l.kind === 'bundled'));
@@ -19,7 +20,7 @@
 
 	function choose(name: string) {
 		lexicon.select(name);
-		open = false;
+		kbd.close();
 	}
 
 	function onCreated(name: string) {
@@ -30,35 +31,73 @@
 	async function confirmDelete() {
 		const name = pendingDelete;
 		pendingDelete = null;
-		open = false;
+		kbd.close();
 		if (!name) return;
 		await deleteCustomLexicon(name);
 		await lexicon.forget(name);
 	}
 
-	function onWindowClick(event: MouseEvent) {
-		if (open && container && !container.contains(event.target as Node)) open = false;
+	// Jump straight into the menu when it opens, so a keyboard user never lands
+	// on the invisible click-outside-to-close backdrop first.
+	$effect(() => {
+		if (kbd.lexiconPicker) {
+			(menuEl?.querySelector<HTMLElement>('.item.current') ??
+				menuEl?.querySelector<HTMLElement>('.item'))?.focus();
+		}
+	});
+
+	// Up/Down roves focus between the lexicon buttons themselves (trash buttons
+	// are Tab-reachable but not part of this list — arrowing through lexicons
+	// shouldn't also stop on their delete controls).
+	function onMenuKeydown(event: KeyboardEvent) {
+		if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+		const items = Array.from(menuEl?.querySelectorAll<HTMLElement>('.item') ?? []);
+		if (!items.length) return;
+		event.preventDefault();
+		const current = items.indexOf(document.activeElement as HTMLElement);
+		const next =
+			event.key === 'ArrowDown'
+				? (current + 1) % items.length
+				: (current - 1 + items.length) % items.length;
+		items[next]?.focus();
 	}
+
 </script>
 
-<svelte:window onclick={onWindowClick} />
-
-<div class="picker" bind:this={container}>
+<div class="picker">
 	<button
 		class="lex"
 		data-status={status}
 		aria-haspopup="listbox"
-		aria-expanded={open}
+		aria-expanded={kbd.lexiconPicker}
 		title={`Lexicon: ${status}`}
-		onclick={() => (open = !open)}
+		onclick={() => (kbd.lexiconPicker ? kbd.close() : kbd.openLexiconPicker())}
 	>
 		<span class="dot"></span>
 		<span class="active-name">{lexicon.name}</span>
-		<span class="chev" class:up={open}>▾</span>
+		<span class="chev" class:up={kbd.lexiconPicker}>▾</span>
 	</button>
 
-	{#if open}
-		<div class="menu" role="listbox" transition:fly={{ y: -4, duration: dur }}>
+	{#if kbd.lexiconPicker}
+		<button
+			class="backdrop"
+			tabindex="-1"
+			aria-label="Close lexicon picker"
+			onclick={() => kbd.close()}
+		></button>
+		<!-- Each option is its own focusable button (Tab already moves between
+		     them via trapFocus); the listbox itself is never a tab stop — this
+		     onkeydown just adds Up/Down as a shortcut on top of that, so it
+		     doesn't need its own tabindex. -->
+		<!-- svelte-ignore a11y_interactive_supports_focus -->
+		<div
+			class="menu"
+			role="listbox"
+			bind:this={menuEl}
+			use:trapFocus
+			onkeydown={onMenuKeydown}
+			transition:fly={{ y: -4, duration: dur }}
+		>
 			<p class="group">Built-in</p>
 			{#each bundled as l (l.name)}
 				<button
@@ -100,7 +139,7 @@
 				{/each}
 			{/if}
 
-			<button class="item create" onclick={() => { open = false; showCreate = true; }}>
+			<button class="item create" onclick={() => { kbd.close(); showCreate = true; }}>
 				+ Create custom…
 			</button>
 		</div>
@@ -176,6 +215,15 @@
 		50% {
 			opacity: 0.3;
 		}
+	}
+
+	.backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 55;
+		background: none;
+		border: none;
+		cursor: default;
 	}
 
 	.menu {

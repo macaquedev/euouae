@@ -10,6 +10,7 @@
 		type ExportFormat
 	} from '$lib/userdata/export';
 	import { overlayDuration } from '$lib/motion';
+	import { trapFocus } from '$lib/keyboard/focusTrap';
 
 	interface Props {
 		listName: string;
@@ -22,6 +23,9 @@
 	const dur = overlayDuration();
 
 	let format = $state<ExportFormat>('one-per-line');
+	let formatEl = $state<HTMLSelectElement | null>(null);
+
+	$effect(() => formatEl?.focus());
 
 	// One ordered row per attribute; export order is the order of the checked rows.
 	// Defaults match Zyzzyva: only Word selected, sitting at the top.
@@ -59,19 +63,20 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="overlay" transition:fade={{ duration: dur }}>
-	<button class="backdrop" aria-label="Cancel" onclick={oncancel}></button>
+	<button class="backdrop" tabindex="-1" aria-label="Cancel" onclick={oncancel}></button>
 	<div
 		class="modal"
 		role="dialog"
 		aria-modal="true"
 		aria-label="Export word list"
+		use:trapFocus
 		transition:scale={{ duration: dur, start: 0.97, opacity: 0 }}
 	>
 		<h2>Export “{listName}”</h2>
 
 		<label class="field">
 			<span>Format</span>
-			<select bind:value={format}>
+			<select bind:this={formatEl} bind:value={format}>
 				{#each FORMATS as f (f)}
 					<option value={f}>{FORMAT_LABELS[f]}</option>
 				{/each}
