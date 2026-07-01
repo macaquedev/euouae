@@ -19,6 +19,7 @@
 	let exportTarget = $state<ListSummary | null>(null);
 	let textarea = $state<HTMLTextAreaElement | null>(null);
 	let backdrop = $state<HTMLDivElement | null>(null);
+	let fileInput = $state<HTMLInputElement | null>(null);
 
 	const targetName = $derived(
 		typeof target === 'number' ? lists.find((l) => l.id === target)?.name : undefined
@@ -249,10 +250,16 @@
 			></textarea>
 		</div>
 		<div class="create-bar">
-			<label class="import">
+			<input
+				bind:this={fileInput}
+				type="file"
+				accept=".txt,text/plain"
+				onchange={importFile}
+				hidden
+			/>
+			<button type="button" class="import" onclick={() => fileInput?.click()}>
 				Import file
-				<input type="file" accept=".txt,text/plain" onchange={importFile} hidden />
-			</label>
+			</button>
 			<span class="muted" class:warn={invalidWords.length > 0}>
 				{plural(words.length)}
 				{#if invalidWords.length}· {invalidWords.length} not in {lexicon.name}{:else if words.length}· all in {lexicon.name}{/if}

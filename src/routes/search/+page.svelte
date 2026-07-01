@@ -375,7 +375,7 @@
 			</div>
 			{#if result.words.length > 0}
 				<div class="table" style="--cols: {cols}">
-					<VirtualList items={result.words} itemHeight={rowHeight}>
+					<VirtualList items={result.words} itemHeight={rowHeight} ariaLabel="Search results">
 						{#snippet header()}
 							<div class="thead">
 								{#each COLUMNS as col (col.label + col.class)}

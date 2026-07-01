@@ -33,11 +33,13 @@
 		height?: string;
 		/** Extra rows rendered above and below the viewport to mask fast scrolls. */
 		overscan?: number;
+		/** Accessible name for the scrollable region, so it's reachable by keyboard. */
+		ariaLabel?: string;
 		item: Snippet<[T, number]>;
 		header?: Snippet;
 	}
 
-	let { items, itemHeight, height = '70vh', overscan = 8, item, header }: Props = $props();
+	let { items, itemHeight, height = '70vh', overscan = 8, ariaLabel, item, header }: Props = $props();
 
 	let viewport = $state<HTMLDivElement | null>(null);
 	let scrollTop = $state(0);
@@ -102,11 +104,18 @@
 	});
 </script>
 
+<!-- The WAI-ARIA "scrollable region" pattern: tabindex makes a keyboard user able to
+     focus and natively scroll (arrows/Page/Home/End) a region that has no other
+     focusable descendant of its own to land on. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
 	class="viewport"
 	bind:this={viewport}
 	bind:clientHeight
 	style:height
+	tabindex="0"
+	role="region"
+	aria-label={ariaLabel}
 	onscroll={() => (scrollTop = viewport?.scrollTop ?? 0)}
 >
 	{#if header}

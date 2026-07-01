@@ -105,6 +105,8 @@
 		if (!session || session.done) return;
 		resetIdle(); // typing is activity — push back the idle watchdog
 		if (event.key === 'Enter') {
+			// A focused button (Quit, Mark, Next…) handles its own Enter/click.
+			if (document.activeElement instanceof HTMLButtonElement) return;
 			event.preventDefault();
 			if (session.revealed) {
 				session.advance();
