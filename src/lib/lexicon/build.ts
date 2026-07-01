@@ -7,7 +7,8 @@
 // (scripts/build-lexicon.ts, bun:sqlite) and the in-app importer (SQLite-WASM)
 // each take these rows and the schema and fill their own database.
 
-import type { Alphabet } from './alphabet';
+import type { Alphabet, Tile } from './alphabet';
+import type { ByBlanks } from './types';
 import { combinationsFor, probabilityOrders } from './probability';
 
 export interface ParsedEntry {
@@ -92,18 +93,25 @@ export function extractPartOfSpeech(definition: string): string {
 	return tags.join(',');
 }
 
+/** Parse one non-empty, non-comment line; null for blank/`#` lines or an empty word. */
+function parseLine(line: string): ParsedEntry | null {
+	if (line === '' || line.startsWith('#')) return null;
+	const tab = line.indexOf('\t');
+	const word = (tab === -1 ? line : line.slice(0, tab)).trim().toUpperCase();
+	if (word === '') return null;
+	const definition = tab === -1 ? '' : line.slice(tab + 1).trim();
+	return { word, definition, partOfSpeech: extractPartOfSpeech(definition) };
+}
+
 /** Parse a `WORD<TAB>definition` word list (blank and `#` comment lines skipped). */
 export function parseSource(text: string): ParsedEntry[] {
 	const entries: ParsedEntry[] = [];
 	const seen = new Set<string>();
 	for (const line of text.split('\n')) {
-		if (line === '' || line.startsWith('#')) continue;
-		const tab = line.indexOf('\t');
-		const word = (tab === -1 ? line : line.slice(0, tab)).trim().toUpperCase();
-		if (word === '' || seen.has(word)) continue;
-		seen.add(word);
-		const definition = tab === -1 ? '' : line.slice(tab + 1).trim();
-		entries.push({ word, definition, partOfSpeech: extractPartOfSpeech(definition) });
+		const entry = parseLine(line);
+		if (!entry || seen.has(entry.word)) continue;
+		seen.add(entry.word);
+		entries.push(entry);
 	}
 	return entries;
 }
@@ -121,12 +129,83 @@ export interface BuildResult {
 	readonly skipped: number;
 }
 
+export interface BuildProgress {
+	readonly phase: 'parsing' | 'deriving' | 'ranking' | 'rows';
+	readonly done: number;
+	readonly total: number;
+}
+
+export interface BuildOptions {
+	/** Called after each chunk with cumulative progress for the current phase. */
+	readonly onProgress?: (progress: BuildProgress) => void;
+	/** Checked between chunks; an aborted signal throws `DOMException('AbortError')`. */
+	readonly signal?: AbortSignal;
+}
+
+// Large word lists (100k+ entries) make the per-word tokenize/hook/combinatorics
+// work below slow enough to freeze the tab for seconds; yielding every CHUNK_SIZE
+// words keeps the UI painting a progress bar and responsive to cancellation.
+const CHUNK_SIZE = 2000;
+
+function yieldToUI(): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function checkAborted(signal: BuildOptions['signal']): void {
+	if (signal?.aborted) throw new DOMException('Build cancelled', 'AbortError');
+}
+
+/**
+ * Same parse as `parseSource`, but chunked and yielding to the event loop (and
+ * checking `signal`) between chunks — for a large custom word list, the plain
+ * synchronous parse would freeze the tab and ignore Cancel for the whole parse
+ * phase before the rest of the (already-chunked) build ever got a chance to run.
+ */
+export async function parseSourceChunked(
+	text: string,
+	options: BuildOptions = {}
+): Promise<ParsedEntry[]> {
+	const { onProgress, signal } = options;
+	const entries: ParsedEntry[] = [];
+	const seen = new Set<string>();
+	const lines = text.split('\n');
+	for (let i = 0; i < lines.length; i++) {
+		const entry = parseLine(lines[i]);
+		if (entry && !seen.has(entry.word)) {
+			seen.add(entry.word);
+			entries.push(entry);
+		}
+		if ((i + 1) % CHUNK_SIZE === 0 || i === lines.length - 1) {
+			checkAborted(signal);
+			onProgress?.({ phase: 'parsing', done: i + 1, total: lines.length });
+			await yieldToUI();
+		}
+	}
+	return entries;
+}
+
+interface BuiltEntry extends ParsedEntry {
+	readonly tiles: readonly Tile[];
+	readonly length: number;
+	readonly alphagram: string;
+	readonly combinations: ByBlanks;
+}
+
 /**
  * Derive every column for every word, ranked by draw probability within length.
  * Returns rows in input order, plus a count of words dropped for not being
  * composed entirely of this alphabet's tiles (see `BuildResult.skipped`).
+ * Processes (and reports progress on) the word list in chunks, yielding to the
+ * event loop between them so a large custom lexicon doesn't freeze the tab and
+ * can be cancelled mid-build via `options.signal`.
  */
-export function buildRows(alphabet: Alphabet, parsed: ReadonlyArray<ParsedEntry>): BuildResult {
+export async function buildRows(
+	alphabet: Alphabet,
+	parsed: ReadonlyArray<ParsedEntry>,
+	options: BuildOptions = {}
+): Promise<BuildResult> {
+	const { onProgress, signal } = options;
+
 	const valid = parsed.filter((e) => alphabet.tokenizeStrict(e.word) !== null);
 	const skipped = parsed.length - valid.length;
 
@@ -136,23 +215,36 @@ export function buildRows(alphabet: Alphabet, parsed: ReadonlyArray<ParsedEntry>
 	const isWord = (w: string) => wordSet.has(w);
 
 	const groupSize = new Map<string, number>();
-	const built = valid.map((e) => {
+	const built: BuiltEntry[] = [];
+	for (let i = 0; i < valid.length; i++) {
+		const e = valid[i];
 		const tiles = alphabet.tokenize(e.word);
 		const alphagram = alphabet.alphagram(e.word);
 		groupSize.set(alphagram, (groupSize.get(alphagram) ?? 0) + 1);
-		return { ...e, tiles, length: tiles.length, alphagram, combinations: combinations(e.word) };
-	});
+		built.push({ ...e, tiles, length: tiles.length, alphagram, combinations: combinations(e.word) });
+
+		if ((i + 1) % CHUNK_SIZE === 0 || i === valid.length - 1) {
+			checkAborted(signal);
+			onProgress?.({ phase: 'deriving', done: i + 1, total: valid.length });
+			await yieldToUI();
+		}
+	}
 
 	const orders = probabilityOrders(built);
+	onProgress?.({ phase: 'ranking', done: built.length, total: built.length });
+	await yieldToUI();
+	checkAborted(signal);
 
-	const rows = built.map((e) => {
+	const rows: LexiconRow[] = [];
+	for (let i = 0; i < built.length; i++) {
+		const e = built[i];
 		const order = orders.get(e.word)!;
 		// Drop one tile, not one character, so hooks are correct for multi-character
 		// tiles (e.g. removing CH from CHACHA, not just C).
 		const { tiles } = e;
 		const withoutFirstTile = tiles.slice(1).map((t) => t.glyph).join('');
 		const withoutLastTile = tiles.slice(0, -1).map((t) => t.glyph).join('');
-		return {
+		rows.push({
 			word: e.word,
 			tiles: alphabet.encode(e.word),
 			length: tiles.length,
@@ -177,8 +269,14 @@ export function buildRows(alphabet: Alphabet, parsed: ReadonlyArray<ParsedEntry>
 			playability_order: null,
 			part_of_speech: e.partOfSpeech,
 			definition: e.definition
-		};
-	});
+		});
+
+		if ((i + 1) % CHUNK_SIZE === 0 || i === built.length - 1) {
+			checkAborted(signal);
+			onProgress?.({ phase: 'rows', done: i + 1, total: built.length });
+			await yieldToUI();
+		}
+	}
 
 	return { rows, skipped };
 }

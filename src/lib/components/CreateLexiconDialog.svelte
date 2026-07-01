@@ -5,7 +5,7 @@
 	import { kbd } from '$lib/keyboard/ui.svelte';
 	import { ALPHABETS, ENGLISH } from '$lib/lexicon/alphabets';
 	import { Alphabet, type AlphabetSpec } from '$lib/lexicon/alphabet';
-	import { buildCustomLexicon } from '$lib/lexicon/customBuild';
+	import { buildCustomLexicon, type CustomBuildPhase } from '$lib/lexicon/customBuild';
 	import { parseSource } from '$lib/lexicon/build';
 	import {
 		saveCustomLexicon,
@@ -43,7 +43,22 @@
 	let text = $state('');
 	let fileName = $state<string | null>(null);
 	let building = $state(false);
+	let buildProgress = $state<{ phase: CustomBuildPhase; done: number; total: number } | null>(null);
+	let buildController: AbortController | null = null;
 	let error = $state<string | null>(null);
+
+	const BUILD_PHASE_LABEL: Record<CustomBuildPhase, string> = {
+		parsing: 'Parsing word list',
+		deriving: 'Deriving columns',
+		ranking: 'Ranking by probability',
+		rows: 'Building rows',
+		writing: 'Writing database'
+	};
+	const buildPct = $derived(
+		buildProgress && buildProgress.total > 0
+			? Math.round((buildProgress.done / buildProgress.total) * 100)
+			: 0
+	);
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let nameInput = $state<HTMLInputElement | null>(null);
 
@@ -207,12 +222,33 @@
 		return { alphabet: new Alphabet(spec), choice: { kind: 'custom', spec } };
 	}
 
+	// Generous but finite: a full Collins word list is a few MB of text; this
+	// stops a wrong/huge file pick from hanging the tab reading it in.
+	const MAX_IMPORT_BYTES = 64 * 1024 * 1024;
+
 	async function onFile(event: Event) {
-		const file = (event.target as HTMLInputElement).files?.[0];
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
 		if (!file) return;
-		fileName = file.name;
-		text = await file.text();
-		error = null;
+		if (file.size > MAX_IMPORT_BYTES) {
+			error = `${file.name} is ${Math.round(file.size / (1024 * 1024))} MB — over the ${MAX_IMPORT_BYTES / (1024 * 1024)} MB limit for a word list.`;
+			input.value = '';
+			return;
+		}
+		try {
+			const contents = await file.text();
+			fileName = file.name;
+			text = contents;
+			error = null;
+		} catch (err) {
+			error = `Couldn't read ${file.name}: ${err instanceof Error ? err.message : String(err)}`;
+		} finally {
+			input.value = '';
+		}
+	}
+
+	function cancelBuild() {
+		buildController?.abort();
 	}
 
 	async function build() {
@@ -224,26 +260,40 @@
 			return;
 		}
 		building = true;
-		// Let the "Building…" state paint before the synchronous compile blocks.
+		buildProgress = null;
+		const controller = new AbortController();
+		buildController = controller;
+		// Let the "Building…" state paint before the compile takes over.
 		await new Promise((r) => setTimeout(r, 0));
 		try {
 			const trimmed = name.trim();
 			const { alphabet: tileset, choice } = resolveAlphabet();
 			// firstInvalidWord already guarantees (via `ready`) that nothing here
 			// gets dropped — buildRows' own filter is just a defensive backstop.
-			const { bytes, wordCount: built } = await buildCustomLexicon(tileset, text);
+			const { bytes, wordCount: built } = await buildCustomLexicon(tileset, text, {
+				onProgress: (p) => (buildProgress = p),
+				signal: controller.signal
+			});
 			await saveCustomLexicon(trimmed, choice, bytes, built);
 			oncreated(trimmed);
 		} catch (err) {
-			error = err instanceof Error ? err.message : String(err);
+			// A cancelled build returns to the editable form quietly — it's not a
+			// failure, so it doesn't get the red error banner.
+			if (!(err instanceof DOMException && err.name === 'AbortError')) {
+				error = err instanceof Error ? err.message : String(err);
+			}
 			building = false;
+			buildProgress = null;
+		} finally {
+			buildController = null;
 		}
 	}
 
 	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape' && !building) {
+		if (event.key === 'Escape') {
 			event.preventDefault();
-			oncancel();
+			if (building) cancelBuild();
+			else oncancel();
 		}
 	}
 </script>
@@ -498,8 +548,23 @@
 
 		<footer class="foot">
 			{#if error}<p class="note err strong" role="alert">{error}</p>{/if}
+			{#if building}
+				<div class="build-progress">
+					<div class="build-progress-track">
+						<div class="build-progress-fill" style:width="{buildPct}%"></div>
+					</div>
+					<span class="build-progress-label">
+						{buildProgress ? BUILD_PHASE_LABEL[buildProgress.phase] : 'Starting…'}
+						{#if buildProgress}
+							· {buildProgress.done.toLocaleString()} / {buildProgress.total.toLocaleString()}
+						{/if}
+					</span>
+				</div>
+			{/if}
 			<div class="foot-actions">
-				<button type="button" class="btn btn--ghost" onclick={oncancel} disabled={building}>Cancel</button>
+				<button type="button" class="btn btn--ghost" onclick={() => (building ? cancelBuild() : oncancel())}>
+					{building ? 'Cancel build' : 'Cancel'}
+				</button>
 				<button type="button" class="btn btn--primary" onclick={build} disabled={!ready}>
 					{building ? 'Building…' : 'Build lexicon'}
 				</button>
@@ -873,6 +938,32 @@
 		display: flex;
 		justify-content: flex-end;
 		gap: var(--s2);
+	}
+
+	.build-progress {
+		display: flex;
+		align-items: center;
+		gap: var(--s3);
+	}
+	.build-progress-track {
+		flex: 1;
+		height: 6px;
+		background: var(--surface-2);
+		border-radius: var(--r-pill);
+		overflow: hidden;
+	}
+	.build-progress-fill {
+		height: 100%;
+		background: linear-gradient(90deg, var(--maple-deep), var(--maple));
+		border-radius: var(--r-pill);
+		transition: width var(--t) var(--ease);
+	}
+	.build-progress-label {
+		flex-shrink: 0;
+		font-family: var(--font-word);
+		font-size: 0.8rem;
+		color: var(--ink-dim);
+		white-space: nowrap;
 	}
 
 	input:disabled,

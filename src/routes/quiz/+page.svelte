@@ -99,7 +99,16 @@
 	onDestroy(() => {
 		document.removeEventListener('visibilitychange', onVisibility);
 		clearTimeout(idleTimer);
+		// Navigating away mid-session (a nav link, not Quit) must not drop a
+		// revealed-but-uncommitted grade.
+		session?.commitPending();
 	});
+
+	// Guards against key-repeat: advancing refocuses the input via a microtask,
+	// which can land a second rapid Enter on the freshly-loaded card and
+	// auto-reveal/mis-grade it before the user has typed anything.
+	const ENTER_DEBOUNCE_MS = 500;
+	let lastEnterAt = 0;
 
 	function onKeydown(event: KeyboardEvent) {
 		if (!session || session.done) return;
@@ -107,6 +116,12 @@
 		if (event.key === 'Enter') {
 			// A focused button (Quit, Mark, Next…) handles its own Enter/click.
 			if (document.activeElement instanceof HTMLButtonElement) return;
+			const now = Date.now();
+			if (now - lastEnterAt < ENTER_DEBOUNCE_MS) {
+				event.preventDefault();
+				return;
+			}
+			lastEnterAt = now;
 			event.preventDefault();
 			if (session.revealed) {
 				session.advance();

@@ -4,7 +4,7 @@
 
 import type { Database } from '@sqlite.org/sqlite-wasm';
 import { epochSeconds } from '$lib/time';
-import { persistUserData, userDb } from './db';
+import { persistUserData, userDb } from './db.svelte';
 
 export interface ListSummary {
 	readonly id: number;

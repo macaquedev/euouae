@@ -6,7 +6,7 @@
 
 import { loadLexicon, evictLexicon, DEFAULT_LEXICON, type LexiconEngine } from './index';
 import { listLexicons, type LexiconInfo } from './registry';
-import { userDb, persistUserData } from '$lib/userdata/db';
+import { userDb, persistUserData } from '$lib/userdata/db.svelte';
 
 const SELECTED_KEY = 'selected_lexicon';
 
@@ -44,9 +44,10 @@ class LexiconStore {
 		this.available = await listLexicons().catch(() => this.available);
 	}
 
-	/** Begin (or switch to) a lexicon; idempotent for an already-active name. */
+	/** Begin (or switch to) a lexicon; idempotent for an already-active, loaded
+	 *  name, but retries if the last attempt for it errored. */
 	load(name: string = this.name): void {
-		if (name === this.name && (this.engine || this.error)) return;
+		if (name === this.name && this.engine) return;
 		this.name = name;
 		this.engine = null;
 		this.error = null;
@@ -61,7 +62,7 @@ class LexiconStore {
 
 	/** Switch lexicons and remember the choice for next launch. */
 	select(name: string): void {
-		if (name === this.name && (this.engine || this.error)) return;
+		if (name === this.name && this.engine) return;
 		this.load(name);
 		void writeSelected(name);
 	}

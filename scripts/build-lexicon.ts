@@ -43,7 +43,7 @@ async function main() {
 	console.log(`Parsed ${parsed.length.toLocaleString()} words.`);
 
 	console.log('Deriving columns and ranking words by probability within each length...');
-	const { rows, skipped } = buildRows(alphabet, parsed);
+	const { rows, skipped } = await buildRows(alphabet, parsed);
 	if (skipped > 0) {
 		console.warn(
 			`Warning: dropped ${skipped.toLocaleString()} word(s) containing a character outside the ${alphabet.name} tile set.`

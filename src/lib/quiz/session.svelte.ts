@@ -315,11 +315,15 @@ export class QuizSession {
 		const before = this.cardFor(this.question);
 		const grade = this.gradeFor(outcome);
 		const reviewed = this.scheduler.review(before, grade, now);
-		// Standard drilling records stats but leaves all scheduling state untouched.
+		// Standard drilling records stats (correct/incorrect counts) but leaves all
+		// scheduling state untouched — `streak` included, since FSRS's `dueAt` reads
+		// it too (to floor a passing card's interval), not just Leitner's cardbox.
 		const next =
 			this.method === 'standard'
 				? {
 						...reviewed,
+						streak: before.streak,
+						lastCorrect: before.lastCorrect,
 						cardbox: before.cardbox,
 						cardboxReviewed: before.cardboxReviewed,
 						stability: before.stability,

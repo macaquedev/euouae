@@ -115,10 +115,32 @@ async function open(): Promise<UserDb> {
 	return { db, export: () => sqlite3.capi.sqlite3_js_db_export(db.pointer!) };
 }
 
-/** The shared, lazily-opened user database (one per app instance). */
-export async function userDb(): Promise<Database> {
-	return (dbPromise ??= open()).then((u) => u.db);
+/**
+ * The shared, lazily-opened user database (one per app instance). Clears the
+ * cached promise on failure so a subsequent call — including the user hitting
+ * "Retry" after an open failure — attempts `open()` again instead of forever
+ * replaying the same cached rejection.
+ */
+function getDb(): Promise<UserDb> {
+	if (!dbPromise) {
+		dbPromise = open().catch((err) => {
+			dbPromise = undefined;
+			throw err;
+		});
+	}
+	return dbPromise;
 }
+
+export async function userDb(): Promise<Database> {
+	return (await getDb()).db;
+}
+
+/** Reactive so the layout can surface a banner the instant a snapshot write
+ *  fails — every mutator in lists.ts/cards.ts/store.svelte.ts fires
+ *  `persistUserData()` without awaiting it, so this is the one place a failed
+ *  write (disk full, permissions, OPFS quota) can actually reach the user
+ *  instead of dying as a silent unhandled rejection. */
+export const persistStatus = $state<{ error: string | null }>({ error: null });
 
 let writing = false;
 let writeAgain = false;
@@ -126,9 +148,14 @@ let writeAgain = false;
 /**
  * Snapshot the user DB to its file. Coalesces concurrent calls (a write requested
  * mid-write is folded into one trailing write), so rapid reviews stay cheap.
+ * Never rejects — a failure is recorded in `persistStatus.error` instead, since
+ * every caller invokes this fire-and-forget.
  */
 export async function persistUserData(): Promise<void> {
-	if (!dbPromise) return;
+	// No early "nothing opened yet" guard: every real caller is either a mutator
+	// that already called userDb() itself, or the Retry button, which only ever
+	// appears after a save was attempted and failed — getDb() below re-attempts
+	// open() in that case rather than silently no-oping the retry.
 	if (writing) {
 		writeAgain = true;
 		return;
@@ -137,13 +164,38 @@ export async function persistUserData(): Promise<void> {
 	try {
 		do {
 			writeAgain = false;
-			const snapshot = (await dbPromise).export();
+			const snapshot = (await getDb()).export();
 			// Copy into an ArrayBuffer-backed array (the export may be SharedArrayBuffer-backed).
 			const bytes = new Uint8Array(snapshot.length);
 			bytes.set(snapshot);
 			await writeSnapshot(bytes);
 		} while (writeAgain);
+		persistStatus.error = null;
+	} catch (err) {
+		persistStatus.error = err instanceof Error ? err.message : String(err);
 	} finally {
 		writing = false;
 	}
+}
+
+/**
+ * Hold the window open on close until the last snapshot write lands, so a
+ * write in flight (or one merely coalesced via `writeAgain`) isn't abandoned
+ * mid-flight. Every mutator fires `persistUserData()` fire-and-forget, so
+ * without this, quitting right after a review/edit can silently lose it.
+ * No-op outside the Tauri shell (there's no other window-close signal to
+ * hook, and no other place data would be lost from).
+ */
+export async function installCloseFlush(): Promise<void> {
+	if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+	const { getCurrentWindow } = await import('@tauri-apps/api/window');
+	const win = getCurrentWindow();
+	let closing = false;
+	await win.onCloseRequested(async (event) => {
+		if (closing || !dbPromise) return; // nothing ever opened, nothing to flush
+		event.preventDefault();
+		closing = true;
+		await persistUserData();
+		await win.destroy();
+	});
 }

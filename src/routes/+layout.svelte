@@ -15,6 +15,7 @@
 	import { goto } from '$app/navigation';
 	import favicon from '$lib/assets/favicon.svg';
 	import { lexicon } from '$lib/lexicon/store.svelte';
+	import { persistStatus, persistUserData, installCloseFlush } from '$lib/userdata/db.svelte';
 	import { prefersReducedMotion } from '$lib/motion';
 	import { NAV } from '$lib/keyboard/nav';
 	import { kbd } from '$lib/keyboard/ui.svelte';
@@ -28,6 +29,7 @@
 	const reduce = prefersReducedMotion();
 
 	onMount(() => void lexicon.init());
+	onMount(() => void installCloseFlush());
 
 	const path = $derived(page.url.pathname.replace(base, '').replace(/\/$/, ''));
 	const isActive = (href: string) => (href === '' ? path === '' : path === `/${href}`);
@@ -144,6 +146,15 @@
 	{#if lexicon.error}
 		<p class="load-error" role="alert">
 			Couldn't load the {lexicon.name} lexicon: {lexicon.error}
+		</p>
+	{/if}
+
+	{#if persistStatus.error}
+		<p class="load-error" role="alert">
+			Couldn't save your changes to disk: {persistStatus.error}. Your changes are still active
+			this session, but won't survive a restart until a save succeeds.
+			<button class="retry" onclick={() => persistUserData()}>Retry</button>
+			<button class="dismiss" aria-label="Dismiss" onclick={() => (persistStatus.error = null)}>✕</button>
 		</p>
 	{/if}
 
@@ -285,6 +296,19 @@
 		border: 1px solid var(--invalid);
 		border-radius: var(--r);
 		padding: 0.75rem 1rem;
+	}
+	.load-error .retry,
+	.load-error .dismiss {
+		margin-left: var(--s3);
+		color: inherit;
+		font-weight: 600;
+		text-decoration: underline;
+		background: none;
+		border: none;
+	}
+	.load-error .dismiss {
+		font-weight: 400;
+		text-decoration: none;
 	}
 
 	main {

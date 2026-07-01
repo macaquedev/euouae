@@ -131,17 +131,14 @@
 	}
 
 	function onInputKeydown(event: KeyboardEvent) {
-		if (event.key === 'Tab') {
-			event.preventDefault(); // Tab rules the play (matching Zyzzyva)
+		if (event.key === 'Enter') {
+			event.preventDefault();
 			judge();
-		} else if (event.key === ' ') {
-			event.preventDefault(); // words are newline-separated; spaces are banned
 		}
-		// Enter falls through to the default newline — it starts the next word.
 	}
 
 	function onInput() {
-		if (input.includes(' ')) input = input.replace(/ +/g, '\n'); // pasted spaces -> line breaks
+		if (input.includes('\n')) input = input.replace(/\n+/g, ' '); // pasted lines -> spaces
 	}
 
 	onMount(() => {
@@ -200,7 +197,7 @@
 		</div>
 	{:else}
 		<div class="prompt">
-			<p class="instruction">Type the play — one word per line.</p>
+			<p class="instruction">Type the play — words separated by spaces.</p>
 			<textarea
 				bind:this={inputEl}
 				bind:value={input}
@@ -210,9 +207,9 @@
 				spellcheck="false"
 				autocapitalize="characters"
 				autocomplete="off"
-				aria-label="Words to judge, one per line"
+				aria-label="Words to judge, separated by spaces"
 			></textarea>
-			<p class="enter">Enter for the next word · Tab to judge</p>
+			<p class="enter">Enter to judge</p>
 		</div>
 	{/if}
 

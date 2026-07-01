@@ -5,7 +5,7 @@
 
 import { sqliteRuntime } from '$lib/sqlite/runtime';
 import type { Alphabet } from './alphabet';
-import { buildRows, parseSource, CANONICAL_SCHEMA, COLUMN_ORDER } from './build';
+import { buildRows, parseSourceChunked, CANONICAL_SCHEMA, COLUMN_ORDER, type BuildProgress } from './build';
 
 export interface BuiltCustomLexicon {
 	readonly bytes: Uint8Array;
@@ -16,23 +16,43 @@ export interface BuiltCustomLexicon {
 	readonly skipped: number;
 }
 
+export type CustomBuildPhase = BuildProgress['phase'] | 'writing';
+
+export interface CustomBuildOptions {
+	readonly onProgress?: (progress: { phase: CustomBuildPhase; done: number; total: number }) => void;
+	readonly signal?: AbortSignal;
+}
+
+// Writing rows into the WASM SQLite DB is fast per-row, but a 100k+ word custom
+// lexicon still adds up to a noticeable freeze without periodic yields.
+const WRITE_CHUNK_SIZE = 2000;
+
+function checkAborted(signal?: AbortSignal): void {
+	if (signal?.aborted) throw new DOMException('Build cancelled', 'AbortError');
+}
+
 /**
  * Parse and compile a `WORD<TAB>definition` word list into lexicon bytes using
  * the given tile set. Throws if the list yields no usable words — either none
  * were entered, or none of them are composed entirely of this tile set's tiles.
+ * Reports progress and honors cancellation via `options` throughout, since a
+ * large word list can take long enough to want both.
  */
 export async function buildCustomLexicon(
 	alphabet: Alphabet,
-	text: string
+	text: string,
+	options: CustomBuildOptions = {}
 ): Promise<BuiltCustomLexicon> {
-	const parsed = parseSource(text);
+	const { onProgress, signal } = options;
+	const parsed = await parseSourceChunked(text, { onProgress, signal });
 	if (parsed.length === 0) {
 		throw new Error('No words found. Expected one WORD per line (TAB-separated definition optional).');
 	}
-	const { rows, skipped } = buildRows(alphabet, parsed);
+	const { rows, skipped } = await buildRows(alphabet, parsed, { onProgress, signal });
 	if (rows.length === 0) {
 		throw new Error(`None of these words are composed entirely of the ${alphabet.name} tile set.`);
 	}
+	checkAborted(signal);
 
 	const sqlite3 = await sqliteRuntime();
 	const db = new sqlite3.oo1.DB();
@@ -43,8 +63,13 @@ export async function buildCustomLexicon(
 		const insert = db.prepare(`INSERT INTO words VALUES (${placeholders})`);
 		try {
 			db.exec('BEGIN');
-			for (const row of rows) {
-				insert.bind(COLUMN_ORDER.map((c) => row[c])).stepReset();
+			for (let i = 0; i < rows.length; i++) {
+				insert.bind(COLUMN_ORDER.map((c) => rows[i][c])).stepReset();
+				if ((i + 1) % WRITE_CHUNK_SIZE === 0 || i === rows.length - 1) {
+					checkAborted(signal);
+					onProgress?.({ phase: 'writing', done: i + 1, total: rows.length });
+					await new Promise((resolve) => setTimeout(resolve, 0));
+				}
 			}
 			db.exec('COMMIT');
 		} finally {

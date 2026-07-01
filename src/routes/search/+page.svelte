@@ -49,8 +49,10 @@
 	let removed = $state<string | null>(null);
 
 	// Discard a result left over from a different lexicon (e.g. switched via the
-	// command palette) so we never render rows from the wrong word list.
-	$effect(() => searchState.forLexicon(lexicon.name));
+	// command palette) so we never render rows from the wrong word list, and
+	// reset any filter conditions that no longer make sense under the new
+	// lexicon's alphabet.
+	$effect(() => searchState.forLexicon(lexicon.engine));
 
 	// A human-readable summary of the active conditions, used to name an ad-hoc
 	// Marinate session started straight from these results.
@@ -87,12 +89,36 @@
 		run: () => void;
 	} | null>(null);
 
+	let builderEl = $state<HTMLFormElement>();
+
+	// Focus a field in the row at `index` once Svelte has rendered the updated
+	// `conditions` array — used after add/remove so keyboard users land back in
+	// the builder instead of being stranded on a button that just moved or
+	// vanished (see addCondition/removeCondition).
+	function focusRow(index: number, selector: string) {
+		queueMicrotask(() => {
+			const rows = builderEl?.querySelectorAll<HTMLElement>('.row');
+			rows?.[index]?.querySelector<HTMLElement>(selector)?.focus();
+		});
+	}
+
 	function addCondition() {
+		const index = conditions.length;
 		searchState.conditions = [...conditions, defaultCondition(metaFor('pattern'))];
+		// Land on the new row's type select rather than leaving focus on the Add
+		// button, which used to force several shift-tabs to reach it.
+		focusRow(index, 'select');
 	}
 
 	function removeCondition(index: number) {
 		searchState.conditions = conditions.filter((_, i) => i !== index);
+		// The row at `index` is gone; whatever followed it shifts up to take its
+		// place, so re-focus there to continue deleting/tabbing in place. If it
+		// was the last row, step back to the new last row instead. Once a single
+		// condition is left its remove button is disabled, so land on the type
+		// select instead — there's nothing else in the row to focus.
+		const target = Math.min(index, conditions.length - 1);
+		focusRow(target, conditions.length === 1 ? 'select' : '.remove');
 	}
 
 	function changeType(index: number, type: RangeField | StringField) {
@@ -232,7 +258,7 @@
 </script>
 
 <section class="search">
-	<form class="builder" onsubmit={(e) => (e.preventDefault(), run())}>
+	<form class="builder" bind:this={builderEl} onsubmit={(e) => (e.preventDefault(), run())}>
 		{#each conditions as condition, index (index)}
 			{@const meta = metaFor(condition.type)}
 			<div class="row">

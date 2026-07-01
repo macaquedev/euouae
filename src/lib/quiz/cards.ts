@@ -6,7 +6,7 @@
 import type { Database, SqlValue } from '@sqlite.org/sqlite-wasm';
 import { num, numOrNull, str } from '$lib/sqlite/values';
 import { epochSeconds } from '$lib/time';
-import { persistUserData, userDb } from '$lib/userdata/db';
+import { persistUserData, userDb } from '$lib/userdata/db.svelte';
 import type { CardState, Grade } from '$lib/scheduler';
 
 type Row = Record<string, SqlValue>;

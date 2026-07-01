@@ -38,14 +38,12 @@
 		inputEl?.focus();
 	}
 
-	// Tab rules the play (matching Zyzzyva); Enter starts the next word on a new
-	// line. Spaces are banned — words are newline-separated.
+	// Enter rules the play; words are space-separated, so Tab is left free to
+	// move focus onward like any other field.
 	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'Tab' && !event.shiftKey) {
+		if (event.key === 'Enter') {
 			event.preventDefault();
 			rule();
-		} else if (event.key === ' ') {
-			event.preventDefault();
 		} else if (event.key === 'Escape') {
 			reset();
 		}
@@ -53,7 +51,7 @@
 
 	function onInput() {
 		ruling = null;
-		if (input.includes(' ')) input = input.replace(/ +/g, '\n'); // pasted spaces -> line breaks
+		if (input.includes('\n')) input = input.replace(/\n+/g, ' '); // pasted lines -> spaces
 	}
 
 	$effect(() => {
@@ -65,7 +63,7 @@
 	<header class="head">
 		<span class="eyebrow">Judge</span>
 		<h1>Is the play acceptable?</h1>
-		<p class="muted">Type every word your play forms, one per line. You get one ruling for the whole play.</p>
+		<p class="muted">Type every word your play forms, separated by spaces. You get one ruling for the whole play.</p>
 	</header>
 
 	<div class="entry">
@@ -81,11 +79,11 @@
 			autocomplete="off"
 			placeholder={engine ? 'Enter words here:' : 'loading lexicon…'}
 			disabled={!engine}
-			aria-label="Words your play forms, one per line"
+			aria-label="Words your play forms, separated by spaces"
 		></textarea>
 		<div class="entry-foot">
-			<span class="faint">One word per line — <kbd class="kbd">Enter</kbd> for the next</span>
-			<span class="enter"><kbd class="kbd">Tab</kbd> to rule</span>
+			<span class="faint">Words separated by spaces</span>
+			<span class="enter"><kbd class="kbd">Enter</kbd> to rule</span>
 		</div>
 	</div>
 

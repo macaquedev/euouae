@@ -3,8 +3,16 @@
 	import { NAV } from '$lib/keyboard/nav';
 	import { kbd } from '$lib/keyboard/ui.svelte';
 	import { overlayDuration } from '$lib/motion';
+	import { trapFocus } from '$lib/keyboard/focusTrap';
 
 	const dur = overlayDuration();
+
+	let closeEl = $state<HTMLButtonElement | null>(null);
+	// Focus starts outside the dialog (whatever triggered "?"), so without an
+	// explicit focus here Tab's first press follows the page's normal tab order
+	// instead of the trap — trapFocus only intercepts Tab once focus is already
+	// inside the trapped node.
+	$effect(() => closeEl?.focus());
 
 	interface Row {
 		keys: string[];
@@ -39,17 +47,25 @@
 </script>
 
 <div class="overlay" transition:fade={{ duration: dur }}>
-	<button class="backdrop" aria-label="Close help" onclick={() => kbd.close()}></button>
+	<button class="backdrop" tabindex="-1" aria-label="Close help" onclick={() => kbd.close()}></button>
 	<div
 		class="sheet"
 		role="dialog"
 		aria-modal="true"
 		aria-label="Keyboard shortcuts"
 		transition:scale={{ duration: dur, start: 0.97, opacity: 0 }}
+		use:trapFocus
 	>
 		<header>
 			<h2>Keyboard shortcuts</h2>
 			<p class="muted">Everything here works without the mouse.</p>
+			<button
+				type="button"
+				class="close"
+				bind:this={closeEl}
+				aria-label="Close"
+				onclick={() => kbd.close()}
+			>✕</button>
 		</header>
 
 		<div class="grid">
@@ -102,7 +118,31 @@
 	}
 
 	header {
+		position: relative;
 		margin-bottom: var(--s5);
+	}
+	.close {
+		position: absolute;
+		top: 0;
+		right: 0;
+		width: 2rem;
+		height: 2rem;
+		display: grid;
+		place-items: center;
+		background: none;
+		border: none;
+		border-radius: var(--r);
+		color: var(--ink-faint);
+		font-size: 0.9rem;
+		cursor: pointer;
+	}
+	.close:hover {
+		color: var(--ink);
+		background: var(--surface-2);
+	}
+	.close:focus-visible {
+		outline: 2px solid var(--maple);
+		outline-offset: 2px;
 	}
 	h2 {
 		margin: 0;

@@ -17,8 +17,6 @@
 	let editingId = $state<number | null>(null);
 	let editName = $state('');
 	let exportTarget = $state<ListSummary | null>(null);
-	let textarea = $state<HTMLTextAreaElement | null>(null);
-	let backdrop = $state<HTMLDivElement | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
 
 	const targetName = $derived(
@@ -36,32 +34,26 @@
 		run: () => void;
 	} | null>(null);
 
-	const words = $derived(parseWords(text));
+	// Validating every word against the lexicon is a full pass over the list;
+	// debounce it off the raw keystroke so pasting/importing a large list (or
+	// just typing) doesn't re-scan on every character. `words` (what actually
+	// gets saved) shares the same debounced source as the validity check, so
+	// there's never a gap where the Save button looks enabled against words it
+	// wouldn't actually save.
+	const VALIDATE_DEBOUNCE_MS = 200;
+	let debouncedText = $state('');
+	let debounceTimer: ReturnType<typeof setTimeout>;
+	$effect(() => {
+		const value = text;
+		clearTimeout(debounceTimer);
+		debounceTimer = setTimeout(() => (debouncedText = value), VALIDATE_DEBOUNCE_MS);
+		return () => clearTimeout(debounceTimer);
+	});
+
+	const words = $derived(parseWords(debouncedText));
 	const invalidWords = $derived(
 		lexicon.engine ? words.filter((w) => !lexicon.engine!.isValid(w)) : []
 	);
-
-	function escapeHtml(s: string): string {
-		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-	}
-
-	// Mirror of the textarea's text with whitespace-separated tokens that aren't in
-	// the lexicon wrapped so the backdrop layer can highlight them in place.
-	const highlighted = $derived(
-		text.replace(/\S+|\s+/g, (chunk) =>
-			/\S/.test(chunk) && lexicon.engine && !lexicon.engine.isValid(chunk)
-				? `<mark>${escapeHtml(chunk)}</mark>`
-				: escapeHtml(chunk)
-		)
-	);
-
-	function onInput(event: Event) {
-		text = (event.currentTarget as HTMLTextAreaElement).value.toUpperCase();
-	}
-
-	function syncScroll() {
-		if (backdrop && textarea) backdrop.scrollTop = textarea.scrollTop;
-	}
 
 	onMount(async () => {
 		store = await ListStore.open();
@@ -236,12 +228,8 @@
 			{/if}
 		</div>
 		<div class="editor">
-			<div class="backdrop" aria-hidden="true" bind:this={backdrop}>{@html highlighted}</div>
 			<textarea
-				bind:this={textarea}
-				value={text}
-				oninput={onInput}
-				onscroll={syncScroll}
+				bind:value={text}
 				rows="5"
 				spellcheck="false"
 				autocapitalize="characters"
@@ -260,10 +248,11 @@
 			<button type="button" class="import" onclick={() => fileInput?.click()}>
 				Import file
 			</button>
-			<span class="muted" class:warn={invalidWords.length > 0}>
-				{plural(words.length)}
-				{#if invalidWords.length}· {invalidWords.length} not in {lexicon.name}{:else if words.length}· all in {lexicon.name}{/if}
-			</span>
+			{#if invalidWords.length > 0}
+				<p class="note err">
+					{plural(invalidWords.length, 'word')} not in {lexicon.name}, including {invalidWords[0]}
+				</p>
+			{/if}
 			<button class="primary" onclick={requestSave} disabled={!canSave}>
 				{target === 'new' ? 'Save list' : `Add to ${targetName}`}
 			</button>
@@ -413,39 +402,14 @@
 		margin-bottom: 0.7rem;
 	}
 
-	/* The textarea and its highlight backdrop must share an identical box model so
-	   their text lays out character-for-character; the textarea floats on top with
-	   a transparent background, letting the backdrop's marks show through. */
-	.editor textarea,
-	.backdrop {
+	.editor textarea {
 		font-family: var(--font-word);
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		white-space: pre-wrap;
 		overflow-wrap: break-word;
-	}
-	.editor textarea {
-		position: relative;
 		margin-bottom: 0;
-		background: transparent;
 		resize: vertical;
-	}
-	.backdrop {
-		position: absolute;
-		inset: 0;
-		overflow: hidden;
-		pointer-events: none;
-		border: 1px solid transparent;
-		border-radius: 0.5rem;
-		padding: 0.6rem 0.8rem;
-		font-size: inherit;
-		line-height: inherit;
-		color: transparent;
-	}
-	.backdrop :global(mark) {
-		background: color-mix(in srgb, var(--invalid) 28%, transparent);
-		color: transparent;
-		border-radius: 0.2rem;
 	}
 
 	textarea::placeholder {
@@ -470,6 +434,21 @@
 	.import:hover {
 		color: var(--text);
 		border-color: var(--accent);
+	}
+
+	/* Matches the inline validation note style from CreateLexiconDialog. */
+	.note {
+		flex: 1;
+		min-width: 0;
+		margin: 0;
+		font-size: 0.82rem;
+		line-height: 1.45;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.note.err {
+		color: var(--invalid);
 	}
 
 	.primary {
@@ -579,8 +558,5 @@
 
 	.muted {
 		color: var(--muted);
-	}
-	.muted.warn {
-		color: var(--invalid);
 	}
 </style>

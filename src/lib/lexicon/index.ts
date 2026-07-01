@@ -41,6 +41,9 @@ export function loadLexicon(name: string = DEFAULT_LEXICON): Promise<LexiconEngi
 			const alphabet = info?.alphabet ?? alphabetForLexicon(name);
 			return new SqliteLexiconEngine(name, db, alphabet);
 		})();
+		// A failed load (bad bytes, transient fs/network error) must not wedge this
+		// name forever — drop it from the cache so the next call retries cleanly.
+		engine.catch(() => engines.delete(name));
 		engines.set(name, engine);
 	}
 	return engine;
