@@ -8,10 +8,17 @@
 // Output: a clean canonical SQLite DB at static/lexicons/<name>.db.
 
 import { Database } from 'bun:sqlite';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { alphabetForLexicon } from '../src/lib/lexicon/alphabets.ts';
-import { buildRows, parseSource, CANONICAL_SCHEMA, COLUMN_ORDER } from '../src/lib/lexicon/build.ts';
+import type { Alphabet } from '../src/lib/lexicon/alphabet.ts';
+import {
+	buildRows,
+	parseSource,
+	CANONICAL_SCHEMA,
+	COLUMN_ORDER,
+	type PredefinedSetData
+} from '../src/lib/lexicon/build.ts';
 
 const sourcePath = (file: string) => join(import.meta.dir, '..', 'data', 'sources', file);
 
@@ -20,6 +27,25 @@ const DEFAULT_SOURCES: Record<string, string> = {
 	NWL23: sourcePath('nwl23.tsv'),
 	FRA24: sourcePath('fra24.tsv')
 };
+
+// Each dictionary family curates its own "Top 100 Stems" — CSW's (Collins-branch
+// Zyzzyva) and NWL's (legacy/NASPA-branch Zyzzyva) stem research differ, so each
+// gets its own file rather than reusing the other's.
+const STEM_SOURCES: Record<string, { six: string; seven: string } | undefined> = {
+	CSW24: { six: sourcePath('csw-6-letter-stems.txt'), seven: sourcePath('csw-7-letter-stems.txt') },
+	NWL23: { six: sourcePath('nwl-6-letter-stems.txt'), seven: sourcePath('nwl-7-letter-stems.txt') }
+};
+
+/**
+ * One entry per line — either a bare alphagram (CSW's files) or a full word
+ * (NWL's files); `alphabet.alphagram()` re-sorts either into the same
+ * canonical form, so one loader handles both formats.
+ */
+async function loadStemAlphagrams(alphabet: Alphabet, path: string): Promise<Set<string> | undefined> {
+	if (!existsSync(path)) return undefined;
+	const lines = (await Bun.file(path).text()).split('\n').map((l) => l.trim()).filter(Boolean);
+	return new Set(lines.map((l) => alphabet.alphagram(l.toUpperCase())));
+}
 
 function parseArgs(argv: string[]) {
 	const positional: string[] = [];
@@ -42,8 +68,20 @@ async function main() {
 	const parsed = parseSource(await Bun.file(source).text());
 	console.log(`Parsed ${parsed.length.toLocaleString()} words.`);
 
+	// Type II/III Sevens & Eights are pure English-tile-set arithmetic (point
+	// values, draw combinations) — true of the tile set itself, so they apply
+	// unprompted to every English lexicon (buildRows no-ops them for French).
+	// Type I Sevens/Eights and Eights-from-Seven-Stems need each dictionary's
+	// own stem research (see STEM_SOURCES) — French has none, so gets neither.
+	const predefined: PredefinedSetData = {};
+	const stems = STEM_SOURCES[name];
+	if (stems) {
+		predefined.sixLetterStems = await loadStemAlphagrams(alphabet, stems.six);
+		predefined.sevenLetterStems = await loadStemAlphagrams(alphabet, stems.seven);
+	}
+
 	console.log('Deriving columns and ranking words by probability within each length...');
-	const { rows, skipped } = await buildRows(alphabet, parsed);
+	const { rows, skipped } = await buildRows(alphabet, parsed, {}, predefined);
 	if (skipped > 0) {
 		console.warn(
 			`Warning: dropped ${skipped.toLocaleString()} word(s) containing a character outside the ${alphabet.name} tile set.`

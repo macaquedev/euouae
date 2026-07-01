@@ -18,8 +18,6 @@ function rowToCard(r: Row): CardState {
 		incorrect: num(r.incorrect),
 		streak: num(r.streak),
 		lastCorrect: numOrNull(r.last_correct),
-		cardbox: numOrNull(r.cardbox),
-		cardboxReviewed: numOrNull(r.cardbox_reviewed),
 		stability: numOrNull(r.stability),
 		difficulty: numOrNull(r.difficulty),
 		lastReview: numOrNull(r.last_review)
@@ -40,7 +38,7 @@ export class CardStore {
 	/** Saved state for every studied question in this deck, keyed by question. */
 	loadAll(): Map<string, CardState> {
 		const rows = this.db.selectObjects(
-			'SELECT question, correct, incorrect, streak, last_correct, cardbox, cardbox_reviewed,' +
+			'SELECT question, correct, incorrect, streak, last_correct,' +
 				' stability, difficulty, last_review FROM cards WHERE lexicon = ? AND deck = ?',
 			[this.lexicon, this.deck]
 		);
@@ -78,12 +76,11 @@ export class CardStore {
 		this.db.exec({
 			sql:
 				'INSERT INTO cards (lexicon, deck, question, correct, incorrect, streak,' +
-				' last_correct, cardbox, cardbox_reviewed, stability, difficulty, last_review)' +
-				' VALUES (?,?,?,?,?,?,?,?,?,?,?,?)' +
+				' last_correct, stability, difficulty, last_review)' +
+				' VALUES (?,?,?,?,?,?,?,?,?,?)' +
 				' ON CONFLICT(lexicon, deck, question) DO UPDATE SET' +
 				' correct=excluded.correct, incorrect=excluded.incorrect, streak=excluded.streak,' +
-				' last_correct=excluded.last_correct, cardbox=excluded.cardbox,' +
-				' cardbox_reviewed=excluded.cardbox_reviewed, stability=excluded.stability,' +
+				' last_correct=excluded.last_correct, stability=excluded.stability,' +
 				' difficulty=excluded.difficulty, last_review=excluded.last_review',
 			bind: [
 				this.lexicon,
@@ -93,8 +90,6 @@ export class CardStore {
 				card.incorrect,
 				card.streak,
 				card.lastCorrect,
-				card.cardbox,
-				card.cardboxReviewed,
 				card.stability,
 				card.difficulty,
 				card.lastReview
@@ -105,5 +100,30 @@ export class CardStore {
 			bind: [this.lexicon, this.deck, card.question, at, grade]
 		});
 		void persistUserData();
+	}
+
+	/**
+	 * Shift every studied card in this deck by `days` — positive pushes due dates
+	 * further out, negative pulls them closer (even overdue). Both schedulers
+	 * compute the due date on demand from the card's timestamps (Leitner from
+	 * `last_review`, FSRS from `last_review` + its stability interval), so sliding
+	 * every timestamp on the card by the same delta shifts whichever due date is
+	 * active by exactly that delta — no separate due-date column to touch. We move
+	 * the whole timeline (`last_review` and `last_correct`) so it stays internally
+	 * consistent. Only reviewed cards (`last_review IS NOT NULL`) are affected.
+	 * Returns how many cards moved.
+	 */
+	reschedule(days: number): number {
+		const delta = days * 86400;
+		this.db.exec({
+			sql:
+				'UPDATE cards SET last_review = last_review + ?,' +
+				' last_correct = CASE WHEN last_correct IS NULL THEN NULL ELSE last_correct + ? END' +
+				' WHERE lexicon = ? AND deck = ? AND last_review IS NOT NULL',
+			bind: [delta, delta, this.lexicon, this.deck]
+		});
+		const affected = this.db.changes();
+		void persistUserData();
+		return affected;
 	}
 }

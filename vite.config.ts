@@ -19,7 +19,11 @@ export default defineConfig({
 	],
 	// sqlite-wasm locates its .wasm via `new URL('sqlite3.wasm', import.meta.url)`,
 	// which only resolves correctly when Vite leaves the package unbundled.
-	optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },
+	// `svelte/animate` is reached only through the lazily-loaded Marinate route, so
+	// Vite's startup scan misses it and re-optimizes on first visit — the in-flight
+	// import then 504s and SvelteKit's SPA router shows a 500. Pre-bundle it so the
+	// dep is ready up front and that navigation never races the optimizer.
+	optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'], include: ['svelte/animate'] },
 	// Fixed port so the Tauri shell's dev URL is stable.
 	server: { port: 1420, strictPort: true }
 });

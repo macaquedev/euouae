@@ -8,7 +8,7 @@
 import type { LexiconEngine, WordEntry } from '$lib/lexicon';
 import { alphagram } from '$lib/lexicon/letters';
 import { words } from '$lib/text';
-import { newCardState, type CardState, type Grade, type Scheduler } from '$lib/scheduler';
+import { newCardState, boxFor, type CardState, type Grade, type Scheduler } from '$lib/scheduler';
 import type { CardStore } from './cards';
 
 export type QuizMethod = 'cardbox' | 'fsrs' | 'standard';
@@ -54,6 +54,9 @@ export class QuizSession {
 	graded = $state<Outcome | null>(null);
 	correctCount = $state(0);
 	incorrectCount = $state(0);
+	/** Every answer word missed so far this session, for optional marinating. Purely
+	 *  a study aid — it never feeds grading or scheduling. */
+	missedWords = $state<Set<string>>(new Set());
 	/** Questions that were due but excluded because they are not yet (spaced modes). */
 	scheduledCount = $state(0);
 
@@ -157,7 +160,7 @@ export class QuizSession {
 				return {
 					q,
 					next: this.scheduler.dueAt(card), // computed per the active scheduler
-					zero: card.cardbox === null || card.cardbox === 0
+					zero: boxFor(card) === 0 // box-0 and never-seen cards both read as 0
 				};
 			})
 			.sort((a, b) => {
@@ -259,6 +262,9 @@ export class QuizSession {
 		this.revealed = true;
 		if (outcome === 'correct') this.correctCount++;
 		else this.incorrectCount++;
+		const missed = this.missed;
+		if (missed.length)
+			this.missedWords = new Set([...this.missedWords, ...missed.map((a) => a.word)]);
 	}
 
 	/** Pause the latency clock — the tab was hidden or the window lost focus. */
@@ -316,16 +322,14 @@ export class QuizSession {
 		const grade = this.gradeFor(outcome);
 		const reviewed = this.scheduler.review(before, grade, now);
 		// Standard drilling records stats (correct/incorrect counts) but leaves all
-		// scheduling state untouched — `streak` included, since FSRS's `dueAt` reads
-		// it too (to floor a passing card's interval), not just Leitner's cardbox.
+		// scheduling state untouched — `streak` included, since it drives both the
+		// Leitner box and FSRS's passing-interval floor.
 		const next =
 			this.method === 'standard'
 				? {
 						...reviewed,
 						streak: before.streak,
 						lastCorrect: before.lastCorrect,
-						cardbox: before.cardbox,
-						cardboxReviewed: before.cardboxReviewed,
 						stability: before.stability,
 						difficulty: before.difficulty,
 						lastReview: before.lastReview

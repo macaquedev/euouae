@@ -21,8 +21,6 @@ CREATE TABLE IF NOT EXISTS cards (
 	incorrect INTEGER NOT NULL DEFAULT 0,
 	streak INTEGER NOT NULL DEFAULT 0,
 	last_correct INTEGER,
-	cardbox INTEGER,
-	cardbox_reviewed INTEGER,
 	stability REAL,
 	difficulty REAL,
 	last_review INTEGER,
@@ -58,11 +56,40 @@ CREATE TABLE IF NOT EXISTS list_words (
 ) WITHOUT ROWID;
 `;
 
+/** Columns present on a table, per the current schema. */
+function columnsOf(db: Database, table: string): string[] {
+	return db.selectObjects(`PRAGMA table_info(${table})`).map((r) => r.name as string);
+}
+
 /** Add a column to an existing table if a prior schema version lacked it. */
 function ensureColumn(db: Database, table: string, column: string, type: string): void {
-	const cols = db.selectObjects(`PRAGMA table_info(${table})`).map((r) => r.name as string);
-	if (!cols.includes(column)) {
+	if (!columnsOf(db, table).includes(column)) {
 		db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+	}
+}
+
+/**
+ * Fold the retired Leitner columns into the shared review state, then drop them.
+ * The Leitner box is now derived in place as max(0, streak) and its due date is
+ * anchored on the shared `last_review`, so cardbox-only cards must carry their
+ * old anchor and box forward or they'd read as never-studied. A no-op once the
+ * columns are gone (fresh installs and already-migrated DBs).
+ */
+function retireCardboxColumns(db: Database): void {
+	const cols = columnsOf(db, 'cards');
+	if (cols.includes('cardbox_reviewed')) {
+		db.exec(
+			'UPDATE cards SET last_review = cardbox_reviewed' +
+				' WHERE last_review IS NULL AND cardbox_reviewed IS NOT NULL'
+		);
+	}
+	if (cols.includes('cardbox')) {
+		// Restore the box for legacy cardbox cards whose streak never tracked it.
+		db.exec('UPDATE cards SET streak = cardbox WHERE streak = 0 AND cardbox > 0');
+		db.exec('ALTER TABLE cards DROP COLUMN cardbox');
+	}
+	if (cols.includes('cardbox_reviewed')) {
+		db.exec('ALTER TABLE cards DROP COLUMN cardbox_reviewed');
 	}
 }
 
@@ -107,10 +134,12 @@ async function open(): Promise<UserDb> {
 	ensureColumn(db, 'list_words', 'position', 'INTEGER');
 	// Cards predating FSRS / on-demand scheduling get the new per-algorithm
 	// columns (all nullable until first review under that algorithm).
-	ensureColumn(db, 'cards', 'cardbox_reviewed', 'INTEGER');
 	ensureColumn(db, 'cards', 'stability', 'REAL');
 	ensureColumn(db, 'cards', 'difficulty', 'REAL');
 	ensureColumn(db, 'cards', 'last_review', 'INTEGER');
+	// The Leitner box is now derived from `streak`, not stored — fold the old
+	// cardbox columns into the shared review state and drop them.
+	retireCardboxColumns(db);
 
 	return { db, export: () => sqlite3.capi.sqlite3_js_db_export(db.pointer!) };
 }

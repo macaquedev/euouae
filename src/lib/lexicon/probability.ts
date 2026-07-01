@@ -122,3 +122,41 @@ export function probabilityOrders(entries: ReadonlyArray<RankableWord>): Map<str
 	}
 	return result;
 }
+
+/**
+ * Assign each word (that has a playability value) its 1-based rank within its
+ * own length, most-played first. Unlike probability, playability is a
+ * per-word empirical stat, not a property of the tiles — two anagrams can
+ * have different real-game play frequency, so (unlike `probabilityOrders`)
+ * ties break by word, not by sharing one alphagram-group rank. Words absent
+ * from `playability` (no corpus data for them) get no entry, i.e. null.
+ */
+export function playabilityOrders(
+	entries: ReadonlyArray<{ readonly word: string; readonly length: number }>,
+	playability: ReadonlyMap<string, number>
+): Map<string, number> {
+	const byLength = new Map<number, { word: string; value: number }[]>();
+	for (const e of entries) {
+		const value = playability.get(e.word);
+		if (value === undefined) continue;
+		const bucket = byLength.get(e.length);
+		const item = { word: e.word, value };
+		if (bucket) bucket.push(item);
+		else byLength.set(e.length, [item]);
+	}
+
+	const result = new Map<string, number>();
+	for (const bucket of byLength.values()) {
+		const sorted = [...bucket].sort((a, b) => b.value - a.value || a.word.localeCompare(b.word));
+		let rank = 0;
+		let prevValue: number | null = null;
+		sorted.forEach((e, i) => {
+			if (e.value !== prevValue) {
+				rank = i + 1;
+				prevValue = e.value;
+			}
+			result.set(e.word, rank);
+		});
+	}
+	return result;
+}

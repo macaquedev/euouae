@@ -55,24 +55,36 @@ function rowToEntry(alphabet: Alphabet, r: Row): WordEntry {
 	};
 }
 
-const RANGE_COLUMN: Readonly<Record<RangeField, string>> = {
+// Fields whose column doesn't depend on an assumed blank count.
+const RANGE_COLUMN: Readonly<Record<Exclude<RangeField, 'probability' | 'probabilityOrder'>, string>> = {
 	length: 'length',
 	numVowels: 'num_vowels',
 	numUniqueLetters: 'num_unique_letters',
 	pointValue: 'point_value',
 	numAnagrams: 'num_anagrams',
-	probabilityOrder: 'probability_order0'
+	playabilityOrder: 'playability_order'
 };
+
+/** The column a range condition filters on. `probability`/`probabilityOrder`
+ *  are computed for three assumed blank counts in the bag; every other field
+ *  ignores `blanks` entirely. */
+function rangeColumn(condition: Extract<SearchCondition, { kind: 'range' }>): string {
+	const blanks = condition.blanks ?? 0;
+	if (condition.type === 'probability') return `combinations${blanks}`;
+	if (condition.type === 'probabilityOrder') return `probability_order${blanks}`;
+	return RANGE_COLUMN[condition.type];
+}
 
 // The primary expression each sortable column orders by. The direction is
 // applied per call; `word` is appended as a stable tie-break so equal rows keep
-// a deterministic order. Probability is grouped by length (its rank is
-// within-length), which is also the index-backed fast path.
+// a deterministic order. Probability/playability are grouped by length (their
+// rank is within-length); probability's is also the index-backed fast path.
 const SORT_KEY: Readonly<Record<SortColumn, string>> = {
 	word: 'word',
 	length: 'length',
 	pointValue: 'point_value',
-	probability: 'length, probability_order0'
+	probability: 'length, probability_order0',
+	playability: 'length, playability_order'
 };
 
 function orderClause({ column, direction }: SearchSort): string {
@@ -103,16 +115,54 @@ interface CompiledClause {
 // wildcard-heavy rack can't blow up the enumeration; covers Zyzzyva's own
 // documented examples (e.g. two "[...]" classes, as in "Z[AEIOU][AEIOU]") with
 // room for blanks alongside them. "*" is unbounded but is expressed as a
-// length comparison, so it needs no cap.
-const MAX_WILD_SLOTS = 4;
+// length comparison, so it needs no cap. Exported so the builder UI can warn
+// when a rack has more wild slots than this — otherwise the truncation below
+// is silent and the search quietly returns fewer/wrong results.
+export const MAX_WILD_SLOTS = 4;
+
+// "Belongs to Group" option keys (see conditions.ts's GROUP_* constants,
+// already uppercased/whitespace-stripped there) to the SQL each checks.
+// Front/back hooks are alphabet-agnostic; the rest are Zyzzyva's own
+// English-specific study sets, precomputed as boolean columns at build time
+// (see predefinedSets.ts) since they need data (stem lists, a fixed reference
+// pool) beyond what a live query can derive from the word alone.
+const GROUP_CLAUSE: Readonly<Record<string, string>> = {
+	FRONTHOOK: 'is_front_hook = 1',
+	BACKHOOK: 'is_back_hook = 1',
+	ANYHOOK: '(is_front_hook = 1 OR is_back_hook = 1)',
+	HIGHFIVE: 'is_high_five = 1',
+	TYPE1SEVEN: 'is_type1_seven = 1',
+	TYPE2SEVEN: 'is_type2_seven = 1',
+	TYPE3SEVEN: 'is_type3_seven = 1',
+	TYPE1EIGHT: 'is_type1_eight = 1',
+	TYPE2EIGHT: 'is_type2_eight = 1',
+	TYPE3EIGHT: 'is_type3_eight = 1',
+	EIGHTFROMSEVENSTEM: 'is_eight_from_seven_stem = 1'
+};
 
 function compileCondition(alphabet: Alphabet, condition: SearchCondition): CompiledClause | null {
 	if (condition.kind === 'range') {
-		const column = RANGE_COLUMN[condition.type];
+		const column = rangeColumn(condition);
 		if (condition.min === condition.max) {
 			return { sql: `${column} = ?`, params: [condition.min] };
 		}
 		return { sql: `${column} BETWEEN ? AND ?`, params: [condition.min, condition.max] };
+	}
+
+	if (condition.kind === 'wordSet') {
+		if (!condition.label) return null; // nothing chosen yet
+		if (condition.words.length === 0) {
+			// Chosen but empty (e.g. a saved list with no words): matches nothing: if
+			// negated, "not in an empty set" is true for every word, i.e. no filter.
+			return condition.negated ? null : { sql: '0', params: [] };
+		}
+		// Bulk INSERT-then-JOIN would need a real temp table; inlining is simpler
+		// and matches how `subanagram` already handles large IN-lists (also
+		// literal, not bound — SQLite's bound-parameter ceiling can't hold a
+		// full lexicon's worth of words). Words are lexicon-derived uppercase
+		// strings (never raw user input), but every apostrophe is still escaped.
+		const inList = condition.words.map((w) => `'${w.replace(/'/g, "''")}'`).join(', ');
+		return { sql: condition.negated ? `word NOT IN (${inList})` : `word IN (${inList})`, params: [] };
 	}
 
 	const value = condition.value.toUpperCase().replace(/\s+/g, '');
@@ -206,6 +256,44 @@ function compileCondition(alphabet: Alphabet, condition: SearchCondition): Compi
 				params: [...counts].map(([glyph, n]) => '*' + `${alphabet.encodeGlyph(glyph)}*`.repeat(n))
 			};
 		}
+		case 'prefix': {
+			if (!value) return null;
+			const encoded = alphabet.encodePattern(value + '*');
+			return { sql: not ? 'tiles NOT GLOB ?' : 'tiles GLOB ?', params: [encoded] };
+		}
+		case 'suffix': {
+			if (!value) return null;
+			const encoded = alphabet.encodePattern('*' + value);
+			return { sql: not ? 'tiles NOT GLOB ?' : 'tiles GLOB ?', params: [encoded] };
+		}
+		case 'consistOf': {
+			// "Consist of" restricts a word to only these tiles (any count for a
+			// bare letter, or up to a given cap when a letter is followed by
+			// digits, e.g. "A2E1" allows up to 2 A's and 1 E and nothing else).
+			const caps = alphabet.consistOfCaps(value);
+			if (caps.size === 0) return null;
+			const clauses: string[] = [];
+			const params: SqlValue[] = [];
+			const allowedCodes = [...caps.keys()]
+				.map((g) => alphabet.encodeGlyph(g)!)
+				.sort()
+				.join('');
+			clauses.push('tiles NOT GLOB ?');
+			params.push(`*[^${allowedCodes}]*`);
+			for (const [glyph, max] of caps) {
+				if (max === null) continue;
+				const code = alphabet.encodeGlyph(glyph)!;
+				clauses.push('tiles NOT GLOB ?');
+				params.push('*' + `${code}*`.repeat(max + 1));
+			}
+			const sql = clauses.join(' AND ');
+			return { sql: not ? `NOT (${sql})` : sql, params };
+		}
+		case 'group': {
+			const base = GROUP_CLAUSE[value as keyof typeof GROUP_CLAUSE];
+			if (!base) return null;
+			return { sql: not ? `NOT (${base})` : base, params: [] };
+		}
 		case 'definition': {
 			if (!condition.value.trim()) return null;
 			const needle = condition.value.trim().toLowerCase();
@@ -271,6 +359,10 @@ export class SqliteLexiconEngine implements LexiconEngine {
 			[this.alphabet.alphagram(letters.toUpperCase())]
 		);
 		return rows.map((r) => rowToEntry(this.alphabet, r));
+	}
+
+	allWords(): readonly string[] {
+		return this.db.selectObjects('SELECT word FROM words').map((r) => r.word as string);
 	}
 
 	search(spec: SearchSpec): SearchResult {

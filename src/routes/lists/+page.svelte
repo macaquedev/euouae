@@ -5,9 +5,11 @@
 	import { lexicon } from '$lib/lexicon/store.svelte';
 	import { ListStore, parseWords, type ListSummary } from '$lib/userdata/lists';
 	import { buildExport, type ExportAttribute, type ExportFormat } from '$lib/userdata/export';
+	import { CardStore } from '$lib/quiz/cards';
 	import { plural } from '$lib/text';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import ExportDialog from '$lib/components/ExportDialog.svelte';
+	import RescheduleDialog from '$lib/components/RescheduleDialog.svelte';
 
 	let store = $state<ListStore | null>(null);
 	let lists = $state<ListSummary[]>([]);
@@ -17,6 +19,8 @@
 	let editingId = $state<number | null>(null);
 	let editName = $state('');
 	let exportTarget = $state<ListSummary | null>(null);
+	let rescheduleTarget = $state<ListSummary | null>(null);
+	let rescheduled = $state<{ id: number; count: number } | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
 
 	const targetName = $derived(
@@ -78,6 +82,8 @@
 				editingId = null;
 				confirmAction = null;
 				exportTarget = null;
+				rescheduleTarget = null;
+				rescheduled = null;
 			}
 			lists = ready.summaries(lex);
 		});
@@ -157,6 +163,19 @@
 
 	function exportList(list: ListSummary) {
 		exportTarget = list;
+	}
+
+	function rescheduleList(list: ListSummary) {
+		rescheduled = null;
+		rescheduleTarget = list;
+	}
+
+	async function runReschedule(days: number) {
+		const list = rescheduleTarget;
+		rescheduleTarget = null;
+		if (!list) return;
+		const cards = await CardStore.open(lexicon.name, `list-${list.id}`);
+		rescheduled = { id: list.id, count: cards.reschedule(days) };
 	}
 
 	async function runExport(format: ExportFormat, attributes: ExportAttribute[]) {
@@ -285,11 +304,17 @@
 								{list.name}
 							</button>
 						{/if}
-						<span class="meta">{list.count} words · {fmtDate(list.created)}</span>
+						<span class="meta">
+							{list.count} words · {fmtDate(list.created)}
+							{#if rescheduled?.id === list.id}
+								· rescheduled {plural(rescheduled.count, 'card')}
+							{/if}
+						</span>
 					</div>
 					<div class="row-actions">
 						<button class="ghost" onclick={() => marinate(list.id)}>Marinate</button>
 						<button class="ghost" onclick={() => study(list.id)}>Study</button>
+						<button class="ghost" onclick={() => rescheduleList(list)}>Reschedule</button>
 						<button class="ghost" onclick={() => exportList(list)}>Export</button>
 						<button class="ghost danger" onclick={() => requestDelete(list)}>Delete</button>
 					</div>
@@ -319,6 +344,14 @@
 		listName={exportTarget.name}
 		onconfirm={({ format, attributes }) => runExport(format, attributes)}
 		oncancel={() => (exportTarget = null)}
+	/>
+{/if}
+
+{#if rescheduleTarget}
+	<RescheduleDialog
+		listName={rescheduleTarget.name}
+		onconfirm={runReschedule}
+		oncancel={() => (rescheduleTarget = null)}
 	/>
 {/if}
 

@@ -1,8 +1,10 @@
 // Leitner cardbox scheduler — a faithful port of Zyzzyva's QuizDatabase
 // scheduling. Correct answers promote a card one box; a miss drops it to box 0.
 // Each box has a base interval (days) and a window (± days) the due date fans out
-// within. The due date is computed on demand from the box and the last review —
-// nothing is stored — so it can never collide with FSRS's schedule.
+// within. The box is not stored: it is derived in place as max(0, streak), and
+// the due date is computed on demand from that box and the last review. Since
+// both schedulers advance `streak` and `lastReview`, progress in FSRS mode moves
+// this schedule too.
 
 import { epochSeconds, startOfDayAfter } from '../time';
 import type { CardState, Grade, Scheduler } from './types';
@@ -13,6 +15,9 @@ export const CARDBOX_SCHEDULE: readonly number[] = [1, 4, 7, 12, 20, 30, 60, 90,
 export const CARDBOX_WINDOW: readonly number[] = [0, 1, 2, 3, 5, 7, 10, 15, 20, 30, 50];
 
 const at = (table: readonly number[], i: number): number => table[Math.min(i, table.length - 1)];
+
+/** The Leitner box a card sits in, derived from its streak (never below 0). */
+export const boxFor = (state: CardState): number => Math.max(0, state.streak);
 
 /**
  * A stable per-question jitter in [-window, +window] days. Derived from the
@@ -37,8 +42,6 @@ export function newCardState(question: string): CardState {
 		incorrect: 0,
 		streak: 0,
 		lastCorrect: null,
-		cardbox: null,
-		cardboxReviewed: null,
 		stability: null,
 		difficulty: null,
 		lastReview: null
@@ -56,11 +59,10 @@ export class LeitnerScheduler implements Scheduler {
 	review(state: CardState, grade: Grade, now: Date): CardState {
 		const correct = grade !== 'again';
 		const nowSec = epochSeconds(now);
-		const inSystem = state.cardbox !== null;
 
-		// Promote on success (a never-seen card jumps straight to box 1, as in
-		// Zyzzyva); reset to box 0 on a miss.
-		const cardbox = correct ? (inSystem ? state.cardbox! + 1 : 1) : 0;
+		// The box is derived as max(0, streak), so promoting/resetting the box is
+		// just advancing the streak — a hit steps it up (from a miss, back to +1),
+		// a miss drops it negative, which reads as box 0.
 		const streak = correct
 			? state.streak < 0
 				? 1
@@ -75,20 +77,20 @@ export class LeitnerScheduler implements Scheduler {
 			incorrect: state.incorrect + (correct ? 0 : 1),
 			streak,
 			lastCorrect: correct ? nowSec : state.lastCorrect,
-			cardbox,
-			cardboxReviewed: nowSec,
-			// FSRS fields are not Leitner's concern — carry them through untouched.
+			// FSRS memory model is not Leitner's concern — carry it through
+			// untouched — but `lastReview` is the shared review anchor both use.
 			stability: state.stability,
 			difficulty: state.difficulty,
-			lastReview: state.lastReview
+			lastReview: nowSec
 		};
 	}
 
 	dueAt(state: CardState): number {
-		// Never studied under Leitner → due now so it gets introduced.
-		if (state.cardbox === null || state.cardboxReviewed === null) return -Infinity;
-		const days = at(this.schedule, state.cardbox) + jitterDays(state.question, at(this.window, state.cardbox));
-		return startOfDayAfter(state.cardboxReviewed, days);
+		// Never reviewed → due now so it gets introduced.
+		if (state.lastReview === null) return -Infinity;
+		const box = boxFor(state);
+		const days = at(this.schedule, box) + jitterDays(state.question, at(this.window, box));
+		return startOfDayAfter(state.lastReview, days);
 	}
 
 	isDue(state: CardState, now: Date): boolean {

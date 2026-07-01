@@ -124,9 +124,6 @@ export class FsrsScheduler implements Scheduler {
 			incorrect: state.incorrect + (correct ? 0 : 1),
 			streak,
 			lastCorrect: correct ? nowSec : state.lastCorrect,
-			// Leitner fields are not FSRS's concern — carry them through untouched.
-			cardbox: state.cardbox,
-			cardboxReviewed: state.cardboxReviewed,
 			stability,
 			difficulty,
 			lastReview: nowSec

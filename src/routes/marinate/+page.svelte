@@ -51,8 +51,12 @@
 	// set handed over from a search (no list id, words held in the scratch source).
 	const listParam = $derived(page.url.searchParams.get('list'));
 	const fromScratch = $derived(listParam === null);
-	const backHref = $derived(fromScratch ? `${base}/search` : `${base}/lists`);
-	const backLabel = $derived(fromScratch ? '← Search' : '← Lists');
+	// `from` names the scratch origin so Back returns whence Marinate was opened.
+	const from = $derived(page.url.searchParams.get('from'));
+	const backHref = $derived(
+		!fromScratch ? `${base}/lists` : from === 'quiz' ? `${base}/quiz` : `${base}/search`
+	);
+	const backLabel = $derived(!fromScratch ? '← Lists' : from === 'quiz' ? '← Quiz' : '← Search');
 	const ready = $derived(store !== null && lexicon.engine !== null);
 
 	// Words grouped by alphagram in saved order, with fully-solved (exhausted)

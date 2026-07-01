@@ -9,7 +9,8 @@
 
 import type { Alphabet, Tile } from './alphabet';
 import type { ByBlanks } from './types';
-import { combinationsFor, probabilityOrders } from './probability';
+import { combinationsFor, probabilityOrders, playabilityOrders } from './probability';
+import { isHighFive, matchesAnyStem, matchesTypeTwoPool, referenceCombinations } from './predefinedSets';
 
 export interface ParsedEntry {
 	readonly word: string;
@@ -42,6 +43,16 @@ export interface LexiconRow {
 	playability_order: number | null;
 	part_of_speech: string;
 	definition: string;
+	// Zyzzyva's predefined "Belongs to Group" study sets (see predefinedSets.ts).
+	// English-specific heuristics: always 0 for a non-English alphabet.
+	is_high_five: number;
+	is_type1_seven: number;
+	is_type2_seven: number;
+	is_type3_seven: number;
+	is_type1_eight: number;
+	is_type2_eight: number;
+	is_type3_eight: number;
+	is_eight_from_seven_stem: number;
 }
 
 export const CANONICAL_SCHEMA = `
@@ -67,7 +78,15 @@ CREATE TABLE words (
   playability REAL,
   playability_order INTEGER,
   part_of_speech TEXT NOT NULL,
-  definition TEXT NOT NULL
+  definition TEXT NOT NULL,
+  is_high_five INTEGER NOT NULL DEFAULT 0,
+  is_type1_seven INTEGER NOT NULL DEFAULT 0,
+  is_type2_seven INTEGER NOT NULL DEFAULT 0,
+  is_type3_seven INTEGER NOT NULL DEFAULT 0,
+  is_type1_eight INTEGER NOT NULL DEFAULT 0,
+  is_type2_eight INTEGER NOT NULL DEFAULT 0,
+  is_type3_eight INTEGER NOT NULL DEFAULT 0,
+  is_eight_from_seven_stem INTEGER NOT NULL DEFAULT 0
 ) WITHOUT ROWID;
 CREATE INDEX idx_alphagram ON words(alphagram);
 CREATE INDEX idx_length ON words(length);
@@ -81,7 +100,9 @@ export const COLUMN_ORDER: ReadonlyArray<keyof LexiconRow> = [
 	'is_front_hook', 'is_back_hook', 'combinations0', 'combinations1',
 	'combinations2', 'probability_order0', 'probability_order1',
 	'probability_order2', 'playability', 'playability_order', 'part_of_speech',
-	'definition'
+	'definition', 'is_high_five', 'is_type1_seven', 'is_type2_seven',
+	'is_type3_seven', 'is_type1_eight', 'is_type2_eight', 'is_type3_eight',
+	'is_eight_from_seven_stem'
 ];
 
 /** Pull part-of-speech codes from the `[n -S]` / `[v ...]` brackets, in order. */
@@ -140,6 +161,21 @@ export interface BuildOptions {
 	readonly onProgress?: (progress: BuildProgress) => void;
 	/** Checked between chunks; an aborted signal throws `DOMException('AbortError')`. */
 	readonly signal?: AbortSignal;
+}
+
+/**
+ * Import-only inputs for Zyzzyva's predefined study sets and playability rank
+ * — none of this is derivable from the word list itself (see predefinedSets.ts).
+ * Every field is optional; omitting one just leaves its columns/sets empty
+ * rather than failing the build, same as `definition`/`playability` already do.
+ */
+export interface PredefinedSetData {
+	/** word -> raw empirical playability value from a real-game corpus. */
+	readonly playability?: ReadonlyMap<string, number>;
+	/** Alphagrams of common 6-letter word stems (Type I Sevens/Eights). */
+	readonly sixLetterStems?: ReadonlySet<string>;
+	/** Alphagrams of common 7-letter word stems (Eights-from-Seven-Stems). */
+	readonly sevenLetterStems?: ReadonlySet<string>;
 }
 
 // Large word lists (100k+ entries) make the per-word tokenize/hook/combinatorics
@@ -202,9 +238,17 @@ interface BuiltEntry extends ParsedEntry {
 export async function buildRows(
 	alphabet: Alphabet,
 	parsed: ReadonlyArray<ParsedEntry>,
-	options: BuildOptions = {}
+	options: BuildOptions = {},
+	predefined: PredefinedSetData = {}
 ): Promise<BuildResult> {
 	const { onProgress, signal } = options;
+	const { playability, sixLetterStems, sevenLetterStems } = predefined;
+	// Reference-word thresholds for Type III Sevens/Eights; computed once
+	// since they don't depend on the word being built. Null under a non-English
+	// alphabet (the reference words won't tokenize), in which case Type III is
+	// simply never true for this lexicon.
+	const type3SevenThreshold = referenceCombinations(alphabet, 'HUNTERS');
+	const type3EightThreshold = referenceCombinations(alphabet, 'NOTIFIED');
 
 	const valid = parsed.filter((e) => alphabet.tokenizeStrict(e.word) !== null);
 	const skipped = parsed.length - valid.length;
@@ -231,6 +275,7 @@ export async function buildRows(
 	}
 
 	const orders = probabilityOrders(built);
+	const playRanks = playability ? playabilityOrders(built, playability) : null;
 	onProgress?.({ phase: 'ranking', done: built.length, total: built.length });
 	await yieldToUI();
 	checkAborted(signal);
@@ -244,6 +289,26 @@ export async function buildRows(
 		const { tiles } = e;
 		const withoutFirstTile = tiles.slice(1).map((t) => t.glyph).join('');
 		const withoutLastTile = tiles.slice(0, -1).map((t) => t.glyph).join('');
+
+		const isType1Seven = tiles.length === 7 && matchesAnyStem(e.alphagram, sixLetterStems);
+		const isType1Eight = tiles.length === 8 && matchesAnyStem(e.alphagram, sixLetterStems);
+		const isEightFromSevenStem = tiles.length === 8 && matchesAnyStem(e.alphagram, sevenLetterStems);
+		const matchesType2Pool = matchesTypeTwoPool(alphabet, tiles);
+		const isType2Seven = tiles.length === 7 && matchesType2Pool;
+		const isType2Eight = tiles.length === 8 && matchesType2Pool;
+		const isType3Seven =
+			tiles.length === 7 &&
+			type3SevenThreshold !== null &&
+			e.combinations[2] >= type3SevenThreshold &&
+			!isType1Seven &&
+			!isType2Seven;
+		const isType3Eight =
+			tiles.length === 8 &&
+			type3EightThreshold !== null &&
+			e.combinations[2] >= type3EightThreshold &&
+			!isType1Eight &&
+			!isType2Eight;
+
 		rows.push({
 			word: e.word,
 			tiles: alphabet.encode(e.word),
@@ -265,10 +330,18 @@ export async function buildRows(
 			probability_order0: order[0],
 			probability_order1: order[1],
 			probability_order2: order[2],
-			playability: null,
-			playability_order: null,
+			playability: playability?.get(e.word) ?? null,
+			playability_order: playRanks?.get(e.word) ?? null,
 			part_of_speech: e.partOfSpeech,
-			definition: e.definition
+			definition: e.definition,
+			is_high_five: Number(isHighFive(tiles)),
+			is_type1_seven: Number(isType1Seven),
+			is_type2_seven: Number(isType2Seven),
+			is_type3_seven: Number(isType3Seven),
+			is_type1_eight: Number(isType1Eight),
+			is_type2_eight: Number(isType2Eight),
+			is_type3_eight: Number(isType3Eight),
+			is_eight_from_seven_stem: Number(isEightFromSevenStem)
 		});
 
 		if ((i + 1) % CHUNK_SIZE === 0 || i === built.length - 1) {

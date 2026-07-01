@@ -2,10 +2,19 @@
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { lexicon } from '$lib/lexicon/store.svelte';
-	import type { RangeField, SortColumn, StringField } from '$lib/lexicon';
+	import {
+		loadLexicon,
+		MAX_WILD_SLOTS,
+		type RangeField,
+		type SortColumn,
+		type StringField,
+		type WordSetField
+	} from '$lib/lexicon';
 	import {
 		RANGE_CONDITIONS,
 		STRING_CONDITIONS,
+		CHOICE_CONDITIONS,
+		WORD_SET_CONDITIONS,
 		defaultCondition,
 		metaFor
 	} from '$lib/search/conditions';
@@ -36,7 +45,8 @@
 		{ label: 'Definition', class: 'c-def' },
 		{ key: 'length', label: 'Len', defaultDir: 'asc', class: 'c-num' },
 		{ key: 'pointValue', label: 'Pts', defaultDir: 'desc', class: 'c-num' },
-		{ key: 'probability', label: 'Prob', defaultDir: 'asc', class: 'c-num' }
+		{ key: 'probability', label: 'Prob', defaultDir: 'asc', class: 'c-num' },
+		{ key: 'playability', label: 'Play', defaultDir: 'asc', class: 'c-num' }
 	];
 
 	// Inputs and results read from the module store, so they persist across
@@ -60,12 +70,59 @@
 		const parts = conditions
 			.map((c) => {
 				const meta = metaFor(c.type);
+				if (c.kind === 'wordSet') return c.label ? `${meta.label}: ${c.label}` : '';
 				if (c.kind === 'string') return c.value.trim() ? `${meta.label}: ${c.value.trim()}` : '';
 				return `${meta.label} ${c.min}–${c.max}`;
 			})
 			.filter(Boolean);
 		return parts.length ? parts.join(', ') : 'Search results';
 	});
+
+	// Choices for the "In word list" condition, scoped to the active lexicon;
+	// refreshed on lexicon change and after any save/remove below (a list
+	// created or emptied via this page's own "Save"/"Remove" panel must show up
+	// — or update its count — without navigating away and back).
+	let listOptions = $state<ListSummary[]>([]);
+	async function refreshListOptions() {
+		const store = await ListStore.open();
+		listOptions = store.summaries(lexicon.name);
+	}
+	$effect(() => {
+		lexicon.name;
+		void refreshListOptions();
+	});
+
+	// Other loaded lexicons to compare against for "In lexicon" — comparing a
+	// lexicon to itself would trivially match everything, so it's excluded.
+	const lexiconOptions = $derived(lexicon.available.filter((l) => l.name !== lexicon.name));
+
+	function applyWordSet(index: number, label: string, words: readonly string[]) {
+		const c = searchState.conditions[index];
+		if (c.kind !== 'wordSet') return;
+		searchState.conditions[index] = { ...c, label, words };
+	}
+
+	async function chooseWordList(index: number, listId: number) {
+		const list = listOptions.find((l) => l.id === listId);
+		if (!list) return;
+		const store = await ListStore.open();
+		applyWordSet(index, list.name, store.words(listId));
+	}
+
+	async function chooseLexicon(index: number, name: string) {
+		const engine = await loadLexicon(name);
+		applyWordSet(index, name, engine.allWords());
+	}
+
+	// How many "?"/"[...]" wild slots a rack search string has — an anagram or
+	// subanagram search enumerates them, capped at MAX_WILD_SLOTS; beyond that,
+	// extra wild slots are silently dropped by the engine, so the builder warns
+	// here rather than let that happen invisibly.
+	function wildSlotCount(value: string): number {
+		if (!lexicon.engine) return 0;
+		return lexicon.engine.alphabet.tokenizeRack(value.toUpperCase()).slots.filter((s) => s.kind !== 'tile')
+			.length;
+	}
 
 	// "Save to list" / "Remove from list" share one inline panel. Save can target
 	// a new named list or append into an existing one (chosen by id), mirroring the
@@ -121,14 +178,16 @@
 		focusRow(target, conditions.length === 1 ? 'select' : '.remove');
 	}
 
-	function changeType(index: number, type: RangeField | StringField) {
+	function changeType(index: number, type: RangeField | StringField | WordSetField) {
 		searchState.conditions[index] = defaultCondition(metaFor(type));
 	}
 
 	function run() {
 		if (!lexicon.engine) return;
-		// No limit — the full result set is rendered through a virtual list.
-		searchState.result = lexicon.engine.search({ conditions, sort });
+		// Usually no limit — the full result set is rendered through a virtual
+		// list — but a rank-ordered search (Probability/Playability order) can
+		// opt into "top N" via searchState.limit.
+		searchState.result = lexicon.engine.search({ conditions, sort, limit: searchState.limit ?? undefined });
 		searchState.searched = true;
 		searchState.lexicon = lexicon.name;
 		saved = null;
@@ -155,7 +214,7 @@
 		const front = Math.min(Math.max(c?.frontHooks ?? 0, 2), MAX_HOOK_COL);
 		const word = Math.max(c?.word ?? 0, 4);
 		const back = Math.min(Math.max(c?.backHooks ?? 0, 2), MAX_HOOK_COL);
-		return `${front}ch ${word + 1}ch ${back}ch minmax(8ch, 1fr) 4ch 4ch 6ch`;
+		return `${front}ch ${word + 1}ch ${back}ch minmax(8ch, 1fr) 4ch 4ch 6ch 6ch`;
 	});
 
 	// Per-row height: most words need only one line of hooks, so most rows stay
@@ -246,6 +305,7 @@
 			saved = saveTargetName;
 		}
 		panel = null;
+		void refreshListOptions();
 	}
 
 	async function doRemove() {
@@ -254,6 +314,7 @@
 		store.removeWords(saveTarget, [...result.words.words]);
 		removed = saveTargetName;
 		panel = null;
+		void refreshListOptions();
 	}
 </script>
 
@@ -264,10 +325,19 @@
 			<div class="row">
 				<select
 					value={condition.type}
-					onchange={(e) => changeType(index, e.currentTarget.value as RangeField | StringField)}
+					onchange={(e) =>
+						changeType(index, e.currentTarget.value as RangeField | StringField | WordSetField)}
 				>
 					<optgroup label="Letters / pattern">
 						{#each STRING_CONDITIONS as c (c.type)}
+							<option value={c.type}>{c.label}</option>
+						{/each}
+					</optgroup>
+					<optgroup label="Groups">
+						{#each CHOICE_CONDITIONS as c (c.type)}
+							<option value={c.type}>{c.label}</option>
+						{/each}
+						{#each WORD_SET_CONDITIONS as c (c.type)}
 							<option value={c.type}>{c.label}</option>
 						{/each}
 					</optgroup>
@@ -293,6 +363,57 @@
 						autocapitalize="characters"
 						autocomplete="off"
 					/>
+					{#if (condition.type === 'anagram' || condition.type === 'subanagram') && wildSlotCount(condition.value) > MAX_WILD_SLOTS}
+						<span class="warn-inline">
+							only the first {MAX_WILD_SLOTS} wildcards ("?"/"[…]") are used
+						</span>
+					{/if}
+				{:else if condition.kind === 'string' && meta.kind === 'choice'}
+					{#if meta.negatable}
+						<label class="negate">
+							<input type="checkbox" bind:checked={condition.negated} /> not
+						</label>
+					{/if}
+					<select class="value plain-select" bind:value={condition.value}>
+						{#each meta.options as opt (opt.value)}
+							<option value={opt.value}>{opt.label}</option>
+						{/each}
+					</select>
+				{:else if condition.kind === 'wordSet' && meta.kind === 'wordSet'}
+					{#if meta.negatable}
+						<label class="negate">
+							<input type="checkbox" bind:checked={condition.negated} /> not
+						</label>
+					{/if}
+					{#if condition.type === 'inWordList'}
+						<select
+							class="value plain-select"
+							onchange={(e) => {
+								const id = Number(e.currentTarget.value);
+								if (id) chooseWordList(index, id);
+							}}
+						>
+							<option value="" selected={!condition.label} disabled>Choose a list…</option>
+							{#each listOptions as list (list.id)}
+								<option value={list.id} selected={condition.label === list.name}>
+									{list.name} ({list.count})
+								</option>
+							{/each}
+						</select>
+					{:else}
+						<select
+							class="value plain-select"
+							onchange={(e) => {
+								const name = e.currentTarget.value;
+								if (name) chooseLexicon(index, name);
+							}}
+						>
+							<option value="" selected={!condition.label} disabled>Choose a lexicon…</option>
+							{#each lexiconOptions as info (info.name)}
+								<option value={info.name} selected={condition.label === info.name}>{info.name}</option>
+							{/each}
+						</select>
+					{/if}
 				{:else if condition.kind === 'range' && meta.kind === 'range'}
 					<div class="range">
 						<input
@@ -310,6 +431,13 @@
 							max={meta.maxBound}
 							aria-label="maximum"
 						/>
+						{#if meta.blankAware}
+							<select class="blanks" bind:value={condition.blanks} aria-label="blanks assumed in the bag">
+								<option value={0}>0 blanks</option>
+								<option value={1}>1 blank</option>
+								<option value={2}>2 blanks</option>
+							</select>
+						{/if}
 					</div>
 				{/if}
 
@@ -327,6 +455,17 @@
 
 		<div class="actions">
 			<button type="button" class="add" onclick={addCondition}>+ Add condition</button>
+			<label class="limit">
+				Limit
+				<input
+					type="number"
+					min="1"
+					class="limit-input"
+					placeholder="none"
+					value={searchState.limit ?? ''}
+					onchange={(e) => (searchState.limit = e.currentTarget.value ? Number(e.currentTarget.value) : null)}
+				/>
+			</label>
 			<button type="submit" class="go" disabled={!lexicon.engine}>Search</button>
 		</div>
 	</form>
@@ -334,7 +473,10 @@
 	{#if result}
 		<div class="results">
 			<div class="results-bar">
-				<p class="count">{plural(result.words.length)}</p>
+				<p class="count">
+					{plural(result.words.length)}{#if result.capped} (more matched; showing the top {result.words
+							.length}){/if}
+				</p>
 				{#if result.words.length > 0}
 					{#if panel === 'save'}
 						<div class="save-form">
@@ -499,6 +641,14 @@
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
 	}
+	/* A choice/word-set condition's <select> shares .value's flex sizing, but its
+	   options are prose (a group name, a list name), not tile glyphs — undo the
+	   rack-input styling so e.g. "Front hooks" doesn't render as "FRONT HOOKS". */
+	select.plain-select {
+		font-family: inherit;
+		letter-spacing: normal;
+		text-transform: none;
+	}
 
 	.range {
 		flex: 1;
@@ -519,6 +669,28 @@
 		color: var(--muted);
 		font-size: 0.85rem;
 		white-space: nowrap;
+	}
+
+	.warn-inline {
+		flex: 0 0 auto;
+		color: var(--invalid);
+		font-size: 0.78rem;
+		white-space: nowrap;
+	}
+
+	.blanks {
+		font-size: 0.85rem;
+	}
+
+	.limit {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		color: var(--muted);
+		font-size: 0.85rem;
+	}
+	.limit-input {
+		width: 5.5rem;
 	}
 
 	.remove {

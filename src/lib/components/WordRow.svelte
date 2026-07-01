@@ -9,6 +9,7 @@
 	let { entry }: Props = $props();
 
 	const rank = $derived(entry.probabilityOrder?.[0] ?? null);
+	const playRank = $derived(entry.playabilityOrder ?? null);
 	const multiChar = $derived(lexicon.engine?.alphabet.hasMultiCharTiles ?? false);
 </script>
 
@@ -23,6 +24,7 @@
 	<span class="num">{entry.length}</span>
 	<span class="num">{entry.pointValue}</span>
 	<span class="num">{rank ?? ''}</span>
+	<span class="num">{playRank ?? ''}</span>
 </div>
 
 <style>

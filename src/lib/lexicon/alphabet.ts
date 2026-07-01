@@ -338,6 +338,38 @@ export class Alphabet {
 		return out;
 	}
 
+	/**
+	 * Parse a "Consist Of" spec into a per-tile cap: a run of tile glyphs, each
+	 * optionally followed by digits capping how many of that tile the word may
+	 * contain (`null` = unlimited if no digits follow, e.g. "AEIOU" allows any
+	 * count of each; "A2E1" allows up to 2 A's and 1 E). Tiles not present in the
+	 * map are forbidden entirely — that's the "consist of only these" semantics.
+	 * Longest-match tokenized like `tokenizeRack`, so a multi-character tile
+	 * glyph (e.g. Spanish "CH") reads as one tile before its digits.
+	 */
+	consistOfCaps(value: string): Map<string, number | null> {
+		const caps = new Map<string, number | null>();
+		for (let i = 0; i < value.length; ) {
+			let matched: Tile | undefined;
+			for (let len = Math.min(this.maxGlyphLength, value.length - i); len >= 1; len--) {
+				matched = this.tileByGlyph.get(value.slice(i, i + len));
+				if (matched) break;
+			}
+			if (!matched) {
+				i++;
+				continue;
+			}
+			i += matched.glyph.length;
+			let digits = '';
+			while (i < value.length && /[0-9]/.test(value[i])) {
+				digits += value[i];
+				i++;
+			}
+			caps.set(matched.glyph, digits ? Number(digits) : null);
+		}
+		return caps;
+	}
+
 	/** Sum of tile values for the word. */
 	pointValue(word: string): number {
 		return this.tokenize(word).reduce((sum, t) => sum + t.value, 0);

@@ -12,9 +12,19 @@ const freshSort = (): SearchSort => ({ column: 'probability', direction: 'asc' }
 // Conditions whose value is literal tile glyphs from one lexicon's alphabet
 // (a pattern, rack, or letter set) — meaningless, or outright wrong, once the
 // alphabet underneath them changes (e.g. switching to a lexicon with digraph
-// tiles). Numeric ranges and free-text conditions (definition, part of speech)
-// aren't alphabet-shaped, so they carry over untouched.
-const ALPHABET_DEPENDENT_TYPES = new Set(['pattern', 'anagram', 'subanagram', 'includeLetters']);
+// tiles). Numeric ranges, free-text conditions (definition, part of speech),
+// the fixed-choice group condition, and word-set conditions (already resolved
+// to plain word strings, independent of any alphabet) aren't alphabet-shaped,
+// so they carry over untouched.
+const ALPHABET_DEPENDENT_TYPES = new Set([
+	'pattern',
+	'anagram',
+	'subanagram',
+	'includeLetters',
+	'prefix',
+	'suffix',
+	'consistOf'
+]);
 
 /** A signature that's equal iff two alphabets have the same tiles in the same
  *  order — cheap enough to recompute on every lexicon switch. */
@@ -25,6 +35,9 @@ function alphabetKeyOf(engine: LexiconEngine): string {
 class SearchState {
 	conditions = $state<SearchCondition[]>(freshConditions());
 	sort = $state<SearchSort>(freshSort());
+	/** Cap on rows returned (Zyzzyva's "+limit" on rank-ordered searches); null
+	 *  for no cap. */
+	limit = $state<number | null>(null);
 	result = $state<SearchResult | null>(null);
 	searched = $state(false);
 	/** The lexicon the current result was produced under; null when no result. */

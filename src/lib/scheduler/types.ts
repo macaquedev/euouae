@@ -11,30 +11,32 @@
 export type Grade = 'again' | 'hard' | 'good' | 'easy';
 
 /**
- * Per-card study state. Each scheduler owns its own fields and derives the due
- * date on demand from them — nothing is shared, so studying a card under one
- * algorithm never disturbs when it next surfaces under the other.
+ * Per-card study state. The counts, `streak`, and `lastReview` are shared: both
+ * schedulers advance them on every graded review, so progress under one improves
+ * the other. Leitner derives its box in place from `streak` (see
+ * LeitnerScheduler.dueAt) rather than storing one — quizzing in FSRS mode moves
+ * the Leitner schedule for free, and vice-versa. Only the FSRS memory model
+ * (`stability`, `difficulty`) is algorithm-specific.
  */
 export interface CardState {
 	/** The prompt: an alphagram for anagram decks, or the word itself. */
 	readonly question: string;
 	readonly correct: number;
 	readonly incorrect: number;
-	/** Consecutive correct (positive) or incorrect (negative) streak. */
+	/**
+	 * Consecutive correct (positive) or incorrect (negative) streak. Doubles as
+	 * the Leitner box: box = max(0, streak), so a hit promotes and a miss drops
+	 * the card to box 0 — the same mechanic as Zyzzyva's cardbox.
+	 */
 	readonly streak: number;
 	/** Unix seconds of the last correct response, or null if never. */
 	readonly lastCorrect: number | null;
-
-	/** Leitner box index; null means the card is not in the cardbox system. */
-	readonly cardbox: number | null;
-	/** Unix seconds of the last Leitner review (when the box was last set). */
-	readonly cardboxReviewed: number | null;
 
 	/** FSRS memory stability (days until R falls to the request retention). */
 	readonly stability: number | null;
 	/** FSRS difficulty, 1 (easy) – 10 (hard). */
 	readonly difficulty: number | null;
-	/** Unix seconds of the last FSRS review (its elapsed-time input). */
+	/** Unix seconds of the last graded review (either scheduler); null if never. */
 	readonly lastReview: number | null;
 }
 
@@ -45,8 +47,8 @@ export interface Scheduler {
 	review(state: CardState, grade: Grade, now: Date): CardState;
 
 	/**
-	 * Unix seconds when the card is next due, derived purely from this
-	 * scheduler's own fields. `-Infinity` for a never-seen card (due now).
+	 * Unix seconds when the card is next due, computed on demand from the card's
+	 * state. `-Infinity` for a never-seen card (due now).
 	 */
 	dueAt(state: CardState): number;
 

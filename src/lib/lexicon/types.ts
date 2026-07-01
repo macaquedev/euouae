@@ -55,14 +55,18 @@ export interface WordEntry {
 	readonly definition: string;
 }
 
-/** Numeric columns a search can bound with an inclusive [min, max] range. */
+/** Numeric columns a search can bound with an inclusive [min, max] range.
+ *  `probability` and `probabilityOrder` are draw-probability fields computed
+ *  for three assumed blank counts in the bag (see `SearchCondition.blanks`). */
 export type RangeField =
 	| 'length'
 	| 'numVowels'
 	| 'numUniqueLetters'
 	| 'pointValue'
 	| 'numAnagrams'
-	| 'probabilityOrder';
+	| 'probability'
+	| 'probabilityOrder'
+	| 'playabilityOrder';
 
 /** Text-valued conditions; `value` interpretation depends on `type`. */
 export type StringField =
@@ -70,16 +74,34 @@ export type StringField =
 	| 'anagram' // exact anagram of the letters ("?" = one blank, "*" = any number)
 	| 'subanagram' // formable from a subset of the letters ("?" = blank)
 	| 'includeLetters' // contains these letters (multiset; respects repeats)
+	| 'prefix' // starts with these letters
+	| 'suffix' // ends with these letters
+	| 'consistOf' // built only from these letters (optionally capped per letter, e.g. "A2E1")
 	| 'definition' // substring of the definition text
-	| 'partOfSpeech'; // tagged with this part of speech, e.g. "n"
+	| 'partOfSpeech' // tagged with this part of speech, e.g. "n"
+	| 'group'; // belongs to a predefined set (front/back hooks, …) — value is the set's key
 
-/** One clause of a search. All clauses in a spec are combined with AND. */
+/** A saved word list or another loaded lexicon, checked by exact membership. */
+export type WordSetField = 'inWordList' | 'inLexicon';
+
+/** One clause of a search. All clauses in a spec are combined with AND.
+ *  `blanks` only affects `probability`/`probabilityOrder`; ignored (and
+ *  treated as 0) for every other range field. */
 export type SearchCondition =
-	| { kind: 'range'; type: RangeField; min: number; max: number }
-	| { kind: 'string'; type: StringField; value: string; negated: boolean };
+	| { kind: 'range'; type: RangeField; min: number; max: number; blanks?: BlankCount }
+	| { kind: 'string'; type: StringField; value: string; negated: boolean }
+	| {
+			kind: 'wordSet';
+			type: WordSetField;
+			negated: boolean;
+			/** Display name of the chosen list/lexicon; '' means nothing chosen yet. */
+			label: string;
+			/** Resolved membership at the time the list/lexicon was chosen. */
+			words: readonly string[];
+	  };
 
 /** A sortable result column (maps to a table header the user can click). */
-export type SortColumn = 'word' | 'length' | 'pointValue' | 'probability';
+export type SortColumn = 'word' | 'length' | 'pointValue' | 'probability' | 'playability';
 export type SortDirection = 'asc' | 'desc';
 
 export interface SearchSort {
@@ -148,6 +170,11 @@ export interface LexiconEngine {
 
 	/** All valid words that are exact anagrams of `letters` (blanks: "?"). */
 	anagrams(letters: string): WordEntry[];
+
+	/** Every word in this lexicon, for cross-lexicon membership checks (the "In
+	 *  Lexicon" search condition). Not cached by the engine — callers that need
+	 *  it repeatedly should hold onto the result themselves. */
+	allWords(): readonly string[];
 
 	/** Run a multi-condition search (clauses AND-combined). */
 	search(spec: SearchSpec): SearchResult;

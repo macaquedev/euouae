@@ -1,13 +1,16 @@
 <script lang="ts">
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { base } from '$app/paths';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { setScratch } from '$lib/marinate/scratch';
 	import { lexicon } from '$lib/lexicon/store.svelte';
 	import { LeitnerScheduler, FsrsScheduler } from '$lib/scheduler';
 	import { CardStore } from '$lib/quiz/cards';
 	import { listDeck, type Deck } from '$lib/quiz/decks';
 	import { ListStore } from '$lib/userdata/lists';
 	import { QuizSession, type QuizMethod, type QuizOrder } from '$lib/quiz/session.svelte';
+	import { quiz } from '$lib/quiz/store';
 	import { TILE_VALUES } from '$lib/lexicon/letters';
 	import { plural } from '$lib/text';
 	import WordCard from '$lib/components/WordCard.svelte';
@@ -46,8 +49,12 @@
 			if (!first) quit();
 			void loadDecks(lex).then(() => {
 				if (!first) return;
-				// Deep link from the Lists page: ?deck=<id> auto-starts that deck.
 				const wanted = page.url.searchParams.get('deck');
+				// Returning to the quiz resumes an in-progress session — unless the URL
+				// explicitly asks for a different deck (a fresh Study deep link wins).
+				const live = quiz.live(lex);
+				if (live && (!wanted || wanted === live.deckId)) return adopt(live.session);
+				// Deep link from the Lists page: ?deck=<id> auto-starts that deck.
 				if (wanted) {
 					const deck = listDecks.find((d) => d.id === wanted);
 					if (deck) start(deck);
@@ -56,15 +63,28 @@
 		});
 	});
 
+	// Resume an in-progress session for `deck` if one is still live, so returning
+	// to a deck picks up its running tally rather than restarting it.
+	function adopt(existing: QuizSession) {
+		session = existing;
+		existing.resumeTimer();
+		existing.markTimingUnreliable(); // the current question sat idle while away
+		resetIdle();
+	}
+
 	async function start(deck: Deck) {
 		const engine = lexicon.engine;
 		if (!engine || starting) return;
+		const existing = quiz.resume(lexicon.name, deck.id);
+		if (existing) return adopt(existing);
 		starting = true;
 		try {
 			const questions = deck.resolve(engine);
 			const store = await CardStore.open(lexicon.name, deck.id);
 			const scheduler = method === 'fsrs' ? new FsrsScheduler() : new LeitnerScheduler();
-			session = new QuizSession(engine, store, scheduler, method, questions, order);
+			const built = new QuizSession(engine, store, scheduler, method, questions, order);
+			quiz.begin(lexicon.name, deck.id, built);
+			session = built;
 			resetIdle();
 		} finally {
 			starting = false;
@@ -72,9 +92,18 @@
 	}
 
 	function quit() {
-		session?.commitPending();
+		quiz.end();
 		session = null;
 		clearTimeout(idleTimer);
+	}
+
+	// Open the words you missed in the shared Marinate sheet — a pure study aside
+	// that changes no grade or schedule. The live quiz stays in the store, so
+	// Marinate's Back link resumes it on the same question.
+	function marinateMisses(missed: string[], name: string) {
+		if (!missed.length) return;
+		setScratch({ name, words: missed });
+		goto(`${base}/marinate?from=quiz`);
 	}
 
 	// AFK handling for FSRS latency timing: pause the clock while the window is
@@ -99,15 +128,15 @@
 	onDestroy(() => {
 		document.removeEventListener('visibilitychange', onVisibility);
 		clearTimeout(idleTimer);
-		// Navigating away mid-session (a nav link, not Quit) must not drop a
-		// revealed-but-uncommitted grade.
-		session?.commitPending();
+		// The session lives on in the store so navigating away and back resumes it;
+		// just bank the away-time out of the current question's latency.
+		session?.pauseTimer();
 	});
 
 	// Guards against key-repeat: advancing refocuses the input via a microtask,
 	// which can land a second rapid Enter on the freshly-loaded card and
 	// auto-reveal/mis-grade it before the user has typed anything.
-	const ENTER_DEBOUNCE_MS = 500;
+	const ENTER_DEBOUNCE_MS = 80;
 	let lastEnterAt = 0;
 
 	function onKeydown(event: KeyboardEvent) {
@@ -258,7 +287,17 @@
 			<p class="score">
 				<span class="ok">{session.correctCount}</span> of {total} correct
 			</p>
-			<button class="btn btn--primary new-quiz" onclick={quit}>New quiz</button>
+			<div class="summary-actions">
+				{#if session.missedWords.size}
+					<button
+						class="btn btn--ghost"
+						onclick={() => session && marinateMisses([...session.missedWords], 'Quiz misses')}
+					>
+						Marinate {session.missedWords.size} missed
+					</button>
+				{/if}
+				<button class="btn btn--primary new-quiz" onclick={quit}>New quiz</button>
+			</div>
 		</div>
 	{:else}
 		{@const found = session.foundWords.size}
@@ -306,6 +345,16 @@
 						<span class="verdict-dot"></span> Missed{session.missed.length ? ` ${session.missed.length} of ${session.answers.length}` : ''}
 					{/if}
 				</div>
+				{#if session.missed.length}
+					<div class="marinate-cta">
+						<button
+							class="btn btn--ghost"
+							onclick={() => session && marinateMisses(session.missed.map((e) => e.word), session.question)}
+						>
+							Marinate {session.missed.length === 1 ? 'this miss' : 'these misses'}
+						</button>
+					</div>
+				{/if}
 			{/if}
 
 			<div class="answers">
@@ -721,6 +770,17 @@
 	}
 	.new-quiz {
 		min-width: 12rem;
+	}
+	.summary-actions {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--s3);
+	}
+	.marinate-cta {
+		display: flex;
+		justify-content: center;
+		margin-top: var(--s3);
 	}
 
 	/* A conic-gradient score ring — the session's headline number. */

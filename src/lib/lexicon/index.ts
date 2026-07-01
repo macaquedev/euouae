@@ -1,10 +1,11 @@
 import { base } from '$app/paths';
 import { openSerializedDb, openSerializedDbBytes } from './sqlite';
-import { SqliteLexiconEngine } from './SqliteLexiconEngine';
+import { SqliteLexiconEngine, MAX_WILD_SLOTS } from './SqliteLexiconEngine';
 import { isBundled, customLexiconBytes, lexiconInfo } from './registry';
 import { alphabetForLexicon } from './alphabets';
 import type { LexiconEngine } from './types';
 
+export { MAX_WILD_SLOTS };
 export type {
 	LexiconEngine,
 	WordEntry,
@@ -12,6 +13,7 @@ export type {
 	BlankCount,
 	RangeField,
 	StringField,
+	WordSetField,
 	SearchCondition,
 	SortColumn,
 	SortDirection,
