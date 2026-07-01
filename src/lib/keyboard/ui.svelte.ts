@@ -6,7 +6,14 @@ class KeyboardUI {
 	palette = $state(false);
 	help = $state(false);
 	lexiconPicker = $state(false);
-	/** Set while a kiosk surface (e.g. Word Judge) owns the keyboard exclusively. */
+	/**
+	 * Set while something outside this store's own overlay set owns the
+	 * keyboard exclusively — a kiosk surface (Word Judge) or a standalone
+	 * dialog (ConfirmModal, ExportDialog, CreateLexiconDialog) that isn't
+	 * routed through palette/help/lexiconPicker. Blocks every global
+	 * shortcut, including Ctrl+K, so nothing can open or navigate out from
+	 * under it.
+	 */
 	locked = $state(false);
 	private returnTo: HTMLElement | null = null;
 

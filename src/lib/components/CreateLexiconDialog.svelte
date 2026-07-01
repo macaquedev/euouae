@@ -2,6 +2,7 @@
 	import { fade, scale } from 'svelte/transition';
 	import { overlayDuration } from '$lib/motion';
 	import { trapFocus } from '$lib/keyboard/focusTrap';
+	import { kbd } from '$lib/keyboard/ui.svelte';
 	import { ALPHABETS, ENGLISH } from '$lib/lexicon/alphabets';
 	import { Alphabet, type AlphabetSpec } from '$lib/lexicon/alphabet';
 	import { buildCustomLexicon } from '$lib/lexicon/customBuild';
@@ -59,6 +60,14 @@
 	let forked = $state(false);
 
 	$effect(() => nameInput?.focus());
+
+	// Not registered with kbd's palette/help/lexiconPicker set, so lock the
+	// global "g <key>" / Ctrl+K handlers directly — otherwise they fire right
+	// through this dialog whenever a button (not a text field) has focus.
+	$effect(() => {
+		kbd.lock();
+		return () => kbd.unlock();
+	});
 
 	const preset = $derived(ALPHABETS[basePreset]);
 	// What the dropdown shows: a preset by key, or "Custom" once forked.

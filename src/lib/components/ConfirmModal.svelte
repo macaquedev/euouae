@@ -2,6 +2,7 @@
 	import { fade, scale } from 'svelte/transition';
 	import { overlayDuration } from '$lib/motion';
 	import { trapFocus } from '$lib/keyboard/focusTrap';
+	import { kbd } from '$lib/keyboard/ui.svelte';
 
 	interface Props {
 		title: string;
@@ -41,6 +42,14 @@
 	$effect(() => {
 		if (requireText !== undefined) inputEl?.focus();
 		else confirmEl?.focus();
+	});
+
+	// Not registered with kbd's palette/help/lexiconPicker set, so lock the
+	// global "g <key>" / Ctrl+K handlers directly — otherwise they fire right
+	// through this dialog whenever a button (not a text field) has focus.
+	$effect(() => {
+		kbd.lock();
+		return () => kbd.unlock();
 	});
 
 	function onKeydown(event: KeyboardEvent) {

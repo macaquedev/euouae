@@ -11,6 +11,7 @@
 	} from '$lib/userdata/export';
 	import { overlayDuration } from '$lib/motion';
 	import { trapFocus } from '$lib/keyboard/focusTrap';
+	import { kbd } from '$lib/keyboard/ui.svelte';
 
 	interface Props {
 		listName: string;
@@ -26,6 +27,14 @@
 	let formatEl = $state<HTMLSelectElement | null>(null);
 
 	$effect(() => formatEl?.focus());
+
+	// Not registered with kbd's palette/help/lexiconPicker set, so lock the
+	// global "g <key>" / Ctrl+K handlers directly — otherwise they fire right
+	// through this dialog whenever a button (not a text field) has focus.
+	$effect(() => {
+		kbd.lock();
+		return () => kbd.unlock();
+	});
 
 	// One ordered row per attribute; export order is the order of the checked rows.
 	// Defaults match Zyzzyva: only Word selected, sitting at the top.
