@@ -239,7 +239,12 @@ export async function installCloseFlush(): Promise<void> {
 		if (closing || !dbPromise) return; // nothing ever opened, nothing to flush
 		event.preventDefault();
 		closing = true;
-		await persistUserData();
-		await win.destroy();
+		// Always reach destroy(), even if the final flush throws — otherwise a
+		// failed write would trap the user with an unclosable window.
+		try {
+			await persistUserData();
+		} finally {
+			await win.destroy();
+		}
 	});
 }
