@@ -389,29 +389,47 @@ export class SqliteLexiconEngine implements LexiconEngine {
 
 		// Every condition is decided in SQL, so the query is authoritative: fetch
 		// one past the limit to learn whether more matched. Only the ordered word
-		// strings (plus each row's cheap hook *lengths*, for per-row layout — see
-		// `hookChars`) are pulled here; full rows still hydrate lazily per slice.
+		// strings (plus each row's cheap word/hook *lengths*, for layout — see
+		// `hookChars`/`columns`) are pulled here; full rows still hydrate lazily
+		// per slice. Column widths are folded out of this same pass — sized to the
+		// rows actually shown — rather than a second full-table aggregate scan,
+		// which used to double the cost of a broad search.
 		const sqlLimit = spec.limit !== undefined ? ` LIMIT ${spec.limit + 1}` : '';
-		const rows = this.db.selectObjects(
-			`SELECT word, LENGTH(front_hooks) fh, LENGTH(back_hooks) bh FROM words
+		// rowMode 'array' skips building a keyed object per row — on a broad match
+		// this loop sees hundreds of thousands of rows, and the plain arrays are
+		// measurably faster to materialise and walk.
+		const rows: SqlValue[][] = [];
+		this.db.exec({
+			sql: `SELECT word, LENGTH(word) wl, LENGTH(front_hooks) fh, LENGTH(back_hooks) bh FROM words
 			 WHERE ${where} ORDER BY ${orderClause(spec.sort)}${sqlLimit}`,
-			params
-		);
-		let words = rows.map((r) => r.word as string);
-		let hookChars = rows.map((r) =>
-			this.hookWidth(Math.max(r.fh as number, r.bh as number))
-		);
+			...(params ? { bind: params } : {}),
+			rowMode: 'array',
+			resultRows: rows
+		});
+		const capped = spec.limit !== undefined && rows.length > spec.limit;
+		if (capped) rows.length = spec.limit!;
 
-		const capped = spec.limit !== undefined && words.length > spec.limit;
-		if (capped) {
-			words = words.slice(0, spec.limit);
-			hookChars = hookChars.slice(0, spec.limit);
+		const words = new Array<string>(rows.length);
+		const hookChars = new Array<number>(rows.length);
+		let wordWidth = 0;
+		let frontWidth = 0;
+		let backWidth = 0;
+		for (let i = 0; i < rows.length; i++) {
+			const [word, wl, fh, bh] = rows[i] as [string, number, number, number];
+			words[i] = word;
+			hookChars[i] = this.hookWidth(Math.max(fh, bh));
+			if (wl > wordWidth) wordWidth = wl;
+			if (fh > frontWidth) frontWidth = fh;
+			if (bh > backWidth) backWidth = bh;
 		}
 
-		const columns = this.columnWidths(where, params);
 		return {
 			words: new WordList(words, (batch) => this.entriesFor(batch)),
-			columns,
+			columns: {
+				word: wordWidth,
+				frontHooks: this.hookWidth(frontWidth),
+				backHooks: this.hookWidth(backWidth)
+			},
 			capped,
 			hookChars
 		};
@@ -424,21 +442,6 @@ export class SqliteLexiconEngine implements LexiconEngine {
 	// worst case: every tile at the widest glyph, plus its separator.
 	private hookWidth(tileCount: number): number {
 		return this.alphabet.hasMultiCharTiles ? tileCount * (this.alphabet.maxGlyphLength + 1) : tileCount;
-	}
-
-	/** Widest word and hook strings among matches, to size table columns without
-	 * truncating them. */
-	private columnWidths(where: string, params: SqlValue[] | undefined): ColumnWidths {
-		const row = this.db.selectObject(
-			`SELECT MAX(LENGTH(word)) w, MAX(LENGTH(front_hooks)) f, MAX(LENGTH(back_hooks)) b
-			 FROM words WHERE ${where}`,
-			params
-		);
-		return {
-			word: (row?.w as number) ?? 0,
-			frontHooks: this.hookWidth((row?.f as number) ?? 0),
-			backHooks: this.hookWidth((row?.b as number) ?? 0)
-		};
 	}
 
 	/** Full entries for an explicit set of words (unordered; the caller re-orders). */

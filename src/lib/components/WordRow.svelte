@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	import type { WordEntry } from '$lib/lexicon';
 	import { lexicon } from '$lib/lexicon/store.svelte';
 	import { joinHooks } from '$lib/text';
@@ -18,7 +19,7 @@
      in the result set, so hooks are shown in full (never truncated). -->
 <div class="row">
 	<span class="hooks front">{joinHooks(entry.frontHooks, multiChar).toLowerCase()}</span>
-	<span class="word">{entry.word}</span>
+	<a class="word" href="{base}/word?q={entry.word}" title="Word info for {entry.word}">{entry.word}</a>
 	<span class="hooks back">{joinHooks(entry.backHooks, multiChar).toLowerCase()}</span>
 	<span class="def">{entry.definition}</span>
 	<span class="num">{entry.length}</span>
@@ -44,6 +45,11 @@
 		font-family: var(--font-word);
 		font-weight: 600;
 		letter-spacing: 0.06em;
+		text-decoration: none;
+	}
+	.word:hover {
+		color: var(--accent);
+		text-decoration: underline;
 	}
 
 	.hooks {

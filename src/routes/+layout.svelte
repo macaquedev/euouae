@@ -102,11 +102,17 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-<svelte:window onkeydown={onKeydown} oncontextmenu={(e) => e.preventDefault()} />
+<svelte:window onkeydown={onKeydown} />
 
 <a class="skip" href="#main">Skip to content</a>
 
 <div class="shell">
+	{#if !lexicon.engine && !lexicon.error}
+		<div class="loading-bar" role="status" aria-label="Loading {lexicon.name} lexicon">
+			<div class="loading-bar-sweep"></div>
+		</div>
+	{/if}
+
 	<header class="topbar">
 		<a class="brand" href="{base}/" aria-label="euouae — home">
 			<Tile glyph="E" value={1} size="1.7rem" />
@@ -146,6 +152,7 @@
 	{#if lexicon.error}
 		<p class="load-error" role="alert">
 			Couldn't load the {lexicon.name} lexicon: {lexicon.error}
+			<button class="retry" onclick={() => lexicon.load()}>Retry</button>
 		</p>
 	{/if}
 
@@ -197,6 +204,33 @@
 	}
 	.skip:focus-visible {
 		transform: translateY(0);
+	}
+
+	/* The lexicon is tens of MB; while it streams in, a thin sweep across the very
+	   top says "working" without blocking anything. */
+	.loading-bar {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 2px;
+		z-index: 60;
+		overflow: hidden;
+		background: var(--maple-ghost);
+	}
+	.loading-bar-sweep {
+		width: 40%;
+		height: 100%;
+		background: linear-gradient(90deg, transparent, var(--maple), transparent);
+		animation: sweep 1.1s var(--ease) infinite;
+	}
+	@keyframes sweep {
+		from {
+			transform: translateX(-100%);
+		}
+		to {
+			transform: translateX(350%);
+		}
 	}
 
 	.topbar {

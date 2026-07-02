@@ -214,6 +214,13 @@
 		setTimeout(() => URL.revokeObjectURL(url), 0);
 	}
 
+	// One-click fix for a paste/import with words the lexicon rejects: keep only
+	// the valid ones (deduplicated, one per line) instead of hand-editing.
+	function dropInvalid() {
+		if (!lexicon.engine) return;
+		text = words.filter((w) => lexicon.engine!.isValid(w)).join('\n');
+	}
+
 	async function importFile(event: Event) {
 		const file = (event.currentTarget as HTMLInputElement).files?.[0];
 		if (!file) return;
@@ -270,6 +277,7 @@
 			{#if invalidWords.length > 0}
 				<p class="note err">
 					{plural(invalidWords.length, 'word')} not in {lexicon.name}, including {invalidWords[0]}
+					<button type="button" class="drop" onclick={dropInvalid}>Drop them</button>
 				</p>
 			{/if}
 			<button class="primary" onclick={requestSave} disabled={!canSave}>
@@ -482,6 +490,14 @@
 	}
 	.note.err {
 		color: var(--invalid);
+	}
+	.note .drop {
+		margin-left: 0.5rem;
+		color: inherit;
+		font-size: inherit;
+		font-weight: 600;
+		text-decoration: underline;
+		padding: 0;
 	}
 
 	.primary {

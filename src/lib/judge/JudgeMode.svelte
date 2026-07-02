@@ -161,7 +161,10 @@
 	});
 </script>
 
-<svelte:window onkeydown={onWindowKeydown} />
+<!-- Right-click is blocked only here: a kiosk left unattended at a tournament
+     shouldn't offer a context menu (inspect, reload, navigate) around the
+     password lock. Elsewhere the app keeps the browser's normal menus. -->
+<svelte:window onkeydown={onWindowKeydown} oncontextmenu={(e) => e.preventDefault()} />
 
 <div class="kiosk" role="application">
 	{#if exiting}

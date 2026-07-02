@@ -319,6 +319,15 @@
 </script>
 
 <section class="search">
+	<header class="head">
+		<span class="eyebrow">Search</span>
+		<h1>Find words</h1>
+		<p class="muted">
+			Every condition must hold. In patterns, <code>?</code> is one tile, <code>*</code> any run,
+			<code>[AEIOU]</code> one of a set.
+		</p>
+	</header>
+
 	<form class="builder" bind:this={builderEl} onsubmit={(e) => (e.preventDefault(), run())}>
 		{#each conditions as condition, index (index)}
 			{@const meta = metaFor(condition.type)}
@@ -534,9 +543,11 @@
 							<button type="button" class="save" onclick={openSave}>
 								{saved ? `Saved “${saved}”` : 'Save to list'}
 							</button>
-							<button type="button" class="save" onclick={openRemove}>
-								{removed ? `Removed from “${removed}”` : 'Remove from list'}
-							</button>
+							{#if listOptions.length > 0}
+								<button type="button" class="save" onclick={openRemove}>
+									{removed ? `Removed from “${removed}”` : 'Remove from list'}
+								</button>
+							{/if}
 						</div>
 					{/if}
 				{/if}
@@ -600,6 +611,28 @@
 		padding: 2rem 1.25rem 4rem;
 	}
 
+	.head {
+		margin-bottom: var(--s5);
+	}
+	.head h1 {
+		margin: var(--s2) 0;
+		font-size: clamp(1.5rem, 4vw, 2rem);
+		font-weight: 600;
+		letter-spacing: -0.01em;
+	}
+	.head p {
+		margin: 0;
+		max-width: 40rem;
+	}
+	.head code {
+		font-family: var(--font-word);
+		font-size: 0.85em;
+		color: var(--maple-soft);
+		background: var(--surface-2);
+		padding: 0.05rem 0.3rem;
+		border-radius: var(--r-sm);
+	}
+
 	/* The builder stays comfortably narrow; the results table uses the full width
 	   so wide hook columns have room. */
 	.builder {
@@ -637,6 +670,7 @@
 
 	.value {
 		flex: 1;
+		min-width: 0; /* let the input shrink instead of overflowing the viewport */
 		font-family: var(--font-word);
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
@@ -840,5 +874,24 @@
 	}
 	.arrow {
 		font-size: 0.6rem;
+	}
+
+	@media (max-width: 640px) {
+		.row {
+			flex-wrap: wrap;
+		}
+		.row > select {
+			flex: 1 1 calc(100% - 2.5rem); /* full row, leaving space for the × beside it */
+		}
+		.value,
+		.range {
+			flex: 1 1 12rem;
+		}
+		.actions {
+			flex-wrap: wrap;
+		}
+		.results-bar {
+			flex-wrap: wrap;
+		}
 	}
 </style>

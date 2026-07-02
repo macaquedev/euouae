@@ -11,7 +11,6 @@
 	import { ListStore } from '$lib/userdata/lists';
 	import { QuizSession, type QuizMethod, type QuizOrder } from '$lib/quiz/session.svelte';
 	import { quiz } from '$lib/quiz/store';
-	import { TILE_VALUES } from '$lib/lexicon/letters';
 	import { plural } from '$lib/text';
 	import WordCard from '$lib/components/WordCard.svelte';
 	import Tile from '$lib/components/Tile.svelte';
@@ -72,9 +71,14 @@
 		resetIdle();
 	}
 
+	// The deck most recently started, so the "nothing due" screen can offer to
+	// drill it anyway without rescheduling anything.
+	let lastDeck: Deck | null = null;
+
 	async function start(deck: Deck) {
 		const engine = lexicon.engine;
 		if (!engine || starting) return;
+		lastDeck = deck;
 		const existing = quiz.resume(lexicon.name, deck.id);
 		if (existing) return adopt(existing);
 		starting = true;
@@ -95,6 +99,16 @@
 		quiz.end();
 		session = null;
 		clearTimeout(idleTimer);
+	}
+
+	// From the "nothing due" screen: rerun the same deck as a Standard drill,
+	// which quizzes everything and never touches the schedule.
+	async function drillAnyway() {
+		const deck = lastDeck;
+		if (!deck) return;
+		quit();
+		method = 'standard';
+		await start(deck);
 	}
 
 	// Open the words you missed in the shared Marinate sheet — a pure study aside
@@ -249,7 +263,10 @@
 				<div class="decks">
 					{#each group.decks as deck (deck.id)}
 						<button class="deck" disabled={!lexicon.engine || starting} onclick={() => start(deck)}>
-							<span class="deck-name">{deck.label}</span>
+							<span class="deck-id">
+								<span class="deck-name">{deck.label}</span>
+								<span class="deck-size">{plural(deck.size)}</span>
+							</span>
 							<span class="deck-go" aria-hidden="true">Study →</span>
 						</button>
 					{/each}
@@ -271,10 +288,16 @@
 		<div class="empty panel">
 			{#if session.scheduledCount > 0}
 				<p>Nothing due right now — {plural(session.scheduledCount, 'card')} scheduled for later.</p>
+				<div class="empty-actions">
+					<button class="btn btn--ghost" onclick={quit}>← Back</button>
+					<button class="btn btn--primary" onclick={drillAnyway}>
+						Drill them anyway (no scheduling)
+					</button>
+				</div>
 			{:else}
 				<p>This deck has no questions.</p>
+				<button class="btn btn--ghost" onclick={quit}>← Back</button>
 			{/if}
-			<button class="btn btn--ghost" onclick={quit}>← Back</button>
 		</div>
 	{:else if session.done}
 		{@const total = session.correctCount + session.incorrectCount}
@@ -312,9 +335,12 @@
 				<button class="btn btn--ghost quit" onclick={quit}>Quit</button>
 			</div>
 
+			<!-- Tokenized through the active lexicon's alphabet, so point values match
+			     its tile set (French K is 10, not English 5) and a multi-character
+			     tile (Spanish CH) renders as one tile, never split into letters. -->
 			<div class="rack">
-				{#each [...session.question] as letter, i (i)}
-					<Tile glyph={letter} value={TILE_VALUES[letter] ?? 0} size="clamp(2.1rem, 8vw, 3.3rem)" />
+				{#each lexicon.engine?.alphabet.tokenize(session.question) ?? [] as tile, i (i)}
+					<Tile glyph={tile.glyph} value={tile.value} size="clamp(2.1rem, 8vw, 3.3rem)" />
 				{/each}
 			</div>
 
@@ -499,10 +525,22 @@
 		transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease),
 			transform var(--t-fast) var(--ease);
 	}
+	.deck-id {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		min-width: 0;
+	}
 	.deck-name {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.deck-size {
+		font-family: var(--font-word);
+		font-size: 0.72rem;
+		font-weight: 400;
+		color: var(--ink-faint);
 	}
 	.deck-go {
 		font-family: var(--font-word);
@@ -762,6 +800,12 @@
 	}
 	.empty p {
 		margin: 0;
+	}
+	.empty-actions {
+		display: flex;
+		gap: var(--s3);
+		flex-wrap: wrap;
+		justify-content: center;
 	}
 	.score {
 		margin: 0;

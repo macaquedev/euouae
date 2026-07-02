@@ -1,19 +1,18 @@
 // The catalog of lexicons the app can load: the bundled ones shipped as static
 // `.db` files, plus any custom lexicons the user has built from their own word
-// lists. Custom lexicons live in the Tauri app data directory alongside the user
-// database — their `.db` files under `lexicons/`, and a small JSON manifest
-// recording each one's tile set, word count, and creation time.
+// lists. Custom lexicons live in app-data storage (Tauri data dir or browser
+// OPFS — see platform/storage.ts) alongside the user database: their `.db`
+// files under `lexicons/`, and a small JSON manifest recording each one's tile
+// set, word count, and creation time.
 
 import {
-	BaseDirectory,
 	exists,
-	mkdir,
 	readFile,
 	readTextFile,
-	remove,
+	removeFile,
 	writeFile,
 	writeTextFile
-} from '@tauri-apps/plugin-fs';
+} from '$lib/platform/storage';
 import { ALPHABETS, alphabetForLexicon } from './alphabets';
 import { Alphabet, type AlphabetSpec } from './alphabet';
 
@@ -25,7 +24,6 @@ export type AlphabetChoice =
 	| { readonly kind: 'preset'; readonly key: AlphabetKey }
 	| { readonly kind: 'custom'; readonly spec: AlphabetSpec };
 
-const BASE = BaseDirectory.AppData;
 const DIR = 'lexicons';
 const MANIFEST = `${DIR}/custom.json`;
 const customPath = (name: string) => `${DIR}/${name}.db`;
@@ -72,9 +70,9 @@ function alphabetKeyOf(alphabet: Alphabet): AlphabetKey {
 }
 
 async function readManifest(): Promise<CustomEntry[]> {
-	if (!(await exists(MANIFEST, { baseDir: BASE }))) return [];
+	if (!(await exists(MANIFEST))) return [];
 	try {
-		const parsed = JSON.parse(await readTextFile(MANIFEST, { baseDir: BASE }));
+		const parsed = JSON.parse(await readTextFile(MANIFEST));
 		return Array.isArray(parsed) ? (parsed as CustomEntry[]) : [];
 	} catch {
 		return [];
@@ -82,8 +80,7 @@ async function readManifest(): Promise<CustomEntry[]> {
 }
 
 async function writeManifest(entries: CustomEntry[]): Promise<void> {
-	await mkdir(DIR, { baseDir: BASE, recursive: true }).catch(() => {});
-	await writeTextFile(MANIFEST, JSON.stringify(entries, null, 2), { baseDir: BASE });
+	await writeTextFile(MANIFEST, JSON.stringify(entries, null, 2));
 }
 
 function toInfo(entry: CustomEntry): LexiconInfo {
@@ -146,8 +143,7 @@ export async function saveCustomLexicon(
 	bytes: Uint8Array,
 	wordCount: number
 ): Promise<LexiconInfo> {
-	await mkdir(DIR, { baseDir: BASE, recursive: true }).catch(() => {});
-	await writeFile(customPath(name), bytes, { baseDir: BASE });
+	await writeFile(customPath(name), bytes);
 	const createdAt = Date.now();
 	const entry: CustomEntry =
 		choice.kind === 'preset'
@@ -164,12 +160,12 @@ export async function deleteCustomLexicon(name: string): Promise<void> {
 	if (isBundled(name)) return;
 	const entries = (await readManifest()).filter((e) => e.name !== name);
 	await writeManifest(entries);
-	if (await exists(customPath(name), { baseDir: BASE })) {
-		await remove(customPath(name), { baseDir: BASE });
+	if (await exists(customPath(name))) {
+		await removeFile(customPath(name));
 	}
 }
 
 /** The stored bytes of a custom lexicon, for opening it into the engine. */
 export async function customLexiconBytes(name: string): Promise<Uint8Array> {
-	return readFile(customPath(name), { baseDir: BASE });
+	return readFile(customPath(name));
 }

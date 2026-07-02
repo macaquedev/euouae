@@ -7,6 +7,7 @@
 	import { ListStore } from '$lib/userdata/lists';
 	import { getScratch } from '$lib/marinate/scratch';
 	import { alphagram } from '$lib/lexicon/letters';
+	import { prefersReducedMotion } from '$lib/motion';
 	import { joinHooks, letters, words } from '$lib/text';
 
 	// Marinate is a self-test cram sheet over a saved list. One input at the top
@@ -80,6 +81,17 @@
 	]);
 
 	const rowCount = $derived(mode === 'words' ? wordRows.length : hookRows.length);
+
+	// Sinking a solved row FLIP-animates every row beneath it: Svelte measures
+	// each one and builds a Web Animation per moved row, which on a big sheet
+	// blocks the main thread for hundreds of ms before anything moves. Past this
+	// size the slide is off-screen noise anyway, so the row just snaps to the
+	// bottom — duration 0 short-circuits all measurement and animation work.
+	// Also the only reduced-motion gate that reaches these animations: they're
+	// WAAPI, so app.css's animation-duration override never applies to them.
+	const FLIP_MAX_ROWS = 250;
+	const reduce = prefersReducedMotion();
+	const flipMs = $derived(reduce || rowCount > FLIP_MAX_ROWS ? 0 : 250);
 	const solvedCount = $derived(
 		mode === 'words'
 			? wordRows.filter((r) => solvedWords.has(r.word)).length
@@ -330,7 +342,7 @@
 						class:solved
 						class:flash={flashed.has(row.word)}
 						class:celebrate={celebrating}
-						animate:flip={{ duration: 250 }}
+						animate:flip={{ duration: flipMs }}
 					>
 						<span class="q">{repeat ? '' : row.alphagram}</span>
 						<span class="answer" class:hidden={hidden(solved)} class:filled={solved}>{row.word}</span>
@@ -344,7 +356,7 @@
 						class:solved
 						class:flash={flashed.has(row.word)}
 						class:celebrate={celebrating}
-						animate:flip={{ duration: 250 }}
+						animate:flip={{ duration: flipMs }}
 					>
 						<span class="q">{row.word}</span>
 						<span class="answer hooks" class:hidden={hidden(solved)} class:filled={solved}>

@@ -1,16 +1,15 @@
 // The single writable database for everything the user accumulates: card state,
 // the review log, and saved lists. The DB lives in memory (SQLite-WASM) and is
-// snapshotted to one real file in the Tauri app's data directory
-// (e.g. ~/.local/share/com.euouae.app/euouae.sqlite3) — a file you can find,
-// back up, and copy between machines. Loaded on open, rewritten after each
-// change. This is a desktop (Tauri) app: there is no browser storage fallback.
+// snapshotted to one file in app-data storage: under Tauri a real file in the
+// app's data directory (e.g. ~/.local/share/com.euouae.app/euouae.sqlite3) you
+// can find, back up, and copy between machines; in a plain browser the same
+// snapshot in OPFS. Loaded on open, rewritten after each change.
 
 import type { Database } from '@sqlite.org/sqlite-wasm';
-import { BaseDirectory, exists, mkdir, readFile, writeFile } from '@tauri-apps/plugin-fs';
+import { exists, readFile, writeFile } from '$lib/platform/storage';
 import { sqliteRuntime } from '$lib/sqlite/runtime';
 
 const SNAPSHOT_FILE = 'euouae.sqlite3';
-const BASE = BaseDirectory.AppData;
 
 const MIGRATIONS = `
 CREATE TABLE IF NOT EXISTS cards (
@@ -101,14 +100,13 @@ interface UserDb {
 let dbPromise: Promise<UserDb> | undefined;
 
 async function loadSnapshot(): Promise<Uint8Array | null> {
-	if (!(await exists(SNAPSHOT_FILE, { baseDir: BASE }))) return null;
-	const bytes = await readFile(SNAPSHOT_FILE, { baseDir: BASE });
+	if (!(await exists(SNAPSHOT_FILE))) return null;
+	const bytes = await readFile(SNAPSHOT_FILE);
 	return bytes.length > 0 ? bytes : null;
 }
 
 async function writeSnapshot(bytes: Uint8Array): Promise<void> {
-	await mkdir('', { baseDir: BASE, recursive: true }).catch(() => {}); // ensure the data dir
-	await writeFile(SNAPSHOT_FILE, bytes, { baseDir: BASE });
+	await writeFile(SNAPSHOT_FILE, bytes);
 }
 
 async function open(): Promise<UserDb> {

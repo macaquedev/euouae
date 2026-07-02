@@ -1,10 +1,18 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { lexicon } from '$lib/lexicon/store.svelte';
 	import { letters } from '$lib/text';
 	import WordCard from '$lib/components/WordCard.svelte';
 
-	let query = $state('');
+	let query = $state(page.url.searchParams.get('q') ?? '');
 	let inputEl = $state<HTMLInputElement | null>(null);
+
+	// Deep links (?q=WORD — e.g. a word clicked in search results) prefill the
+	// box, including when the page is already mounted and only the query changes.
+	$effect(() => {
+		const q = page.url.searchParams.get('q');
+		if (q) query = q;
+	});
 
 	const normalized = $derived(letters(query));
 
@@ -24,19 +32,24 @@
 	});
 </script>
 
-<section class="word-info">
-	<label class="field">
-		<span class="label">Word Info — type a word</span>
-		<input
-			bind:this={inputEl}
-			bind:value={query}
-			spellcheck="false"
-			autocapitalize="characters"
-			autocomplete="off"
-			placeholder={lexicon.engine ? 'EUOUAE' : 'loading lexicon…'}
-			disabled={!lexicon.engine}
-		/>
-	</label>
+<section class="word-info page">
+	<header class="head">
+		<span class="eyebrow">Word Info</span>
+		<h1>Look up a word</h1>
+		<p class="muted">Hooks, anagrams, definition and probability — updated as you type.</p>
+	</header>
+
+	<input
+		bind:this={inputEl}
+		bind:value={query}
+		onkeydown={(e) => e.key === 'Escape' && (query = '')}
+		spellcheck="false"
+		autocapitalize="characters"
+		autocomplete="off"
+		placeholder={lexicon.engine ? 'EUOUAE' : 'loading lexicon…'}
+		disabled={!lexicon.engine}
+		aria-label="Word to look up"
+	/>
 
 	{#if normalized}
 		{#if entry}
@@ -48,7 +61,15 @@
 				<div class="anagrams">
 					<h3>Anagrams ({anagrams.length})</h3>
 					<ul>
-						{#each anagrams as w (w)}<li class:self={w === entry.word}>{w}</li>{/each}
+						{#each anagrams as w (w)}
+							<li>
+								{#if w === entry.word}
+									<span class="self">{w}</span>
+								{:else}
+									<button class="ana" onclick={() => (query = w)}>{w}</button>
+								{/if}
+							</li>
+						{/each}
 					</ul>
 				</div>
 			{/if}
@@ -63,19 +84,20 @@
 <style>
 	.word-info {
 		max-width: 46rem;
-		margin: 0 auto;
-		padding: 2.5rem 1.25rem 4rem;
 	}
 
-	.field {
-		display: block;
+	.head {
+		margin-bottom: var(--s5);
 	}
-
-	.label {
-		display: block;
-		color: var(--muted);
-		font-size: 0.85rem;
-		margin-bottom: 0.5rem;
+	.head h1 {
+		margin: var(--s2) 0;
+		font-size: clamp(1.5rem, 4vw, 2rem);
+		font-weight: 600;
+		letter-spacing: -0.01em;
+	}
+	.head p {
+		margin: 0;
+		max-width: 34rem;
 	}
 
 	input {
@@ -125,7 +147,17 @@
 		letter-spacing: 0.04em;
 		color: var(--muted);
 	}
-	.anagrams li.self {
+	.ana {
+		font: inherit;
+		letter-spacing: inherit;
+		color: inherit;
+		padding: 0;
+	}
+	.ana:hover {
+		color: var(--accent);
+		text-decoration: underline;
+	}
+	.self {
 		color: var(--text);
 		font-weight: 600;
 	}
