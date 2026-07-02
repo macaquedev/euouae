@@ -22,8 +22,7 @@ Thumbs.db
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# lexicon build inputs/outputs (large, regenerable)
-/data/sources/
+# lexicon build outputs — regenerated in CI from the committed sources in data/sources/
 /static/lexicons/
 
 # user app data (card state, review log, saved lists) — personal, never commit
