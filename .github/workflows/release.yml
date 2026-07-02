@@ -1,0 +1,92 @@
+name: Build installers
+
+# Produces native installers on each target OS and attaches them to a draft
+# GitHub Release. Windows and macOS installers CANNOT be built on Linux, so the
+# only reliable way to get them is a matrix build on GitHub-hosted runners.
+#
+# Trigger a release by pushing a version tag:
+#   git tag v0.1.0 && git push origin v0.1.0
+# The `workflow_dispatch` trigger lets you run it manually for a test build.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    permissions:
+      contents: write # required for tauri-action to create the Release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest # universal binary → one .dmg for Intel + Apple Silicon
+            args: '--target universal-apple-darwin'
+          - platform: ubuntu-22.04 # .deb + .AppImage (bonus: proper Linux installers)
+            args: ''
+          - platform: windows-latest # .msi (WiX) + setup .exe (NSIS)
+            args: ''
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        # Lexicon sources are committed under data/sources/; the DBs are
+        # regenerated from them below, so a plain checkout is enough.
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build lexicon databases
+        shell: bash
+        run: |
+          if [ -f data/sources/csw24.tsv ]; then
+            echo "Regenerating lexicon databases from sources..."
+            bun scripts/build-lexicon.ts CSW24
+            bun scripts/build-lexicon.ts NWL23
+            bun scripts/build-lexicon.ts FRA24
+          elif [ -f static/lexicons/CSW24.db ]; then
+            echo "Using pre-committed lexicon databases in static/lexicons/"
+          else
+            echo "::error::No lexicon sources (data/sources/*.tsv) or prebuilt DBs (static/lexicons/*.db) found. The app would ship without dictionaries." >&2
+            exit 1
+          fi
+
+      - name: Build and bundle installers
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # --- Code signing (optional; unsigned builds work but show OS warnings) ---
+          # macOS notarization:
+          #   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+          #   APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+          # Windows Authenticode: configure signCommand in tauri.conf.json bundle.windows
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'euouae ${{ github.ref_name }}'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
