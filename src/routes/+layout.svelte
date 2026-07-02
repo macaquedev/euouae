@@ -15,6 +15,7 @@
 	import { goto } from '$app/navigation';
 	import favicon from '$lib/assets/favicon.svg';
 	import { lexicon } from '$lib/lexicon/store.svelte';
+	import { updater } from '$lib/updater/updater.svelte';
 	import { persistStatus, persistUserData, installCloseFlush } from '$lib/userdata/db.svelte';
 	import { prefersReducedMotion } from '$lib/motion';
 	import { NAV } from '$lib/keyboard/nav';
@@ -24,6 +25,7 @@
 	import ShortcutsHelp from '$lib/components/ShortcutsHelp.svelte';
 	import LexiconPicker from '$lib/components/LexiconPicker.svelte';
 	import ProgressDialog from '$lib/components/ProgressDialog.svelte';
+	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 
 	let { children } = $props();
 
@@ -31,6 +33,7 @@
 
 	onMount(() => void lexicon.init());
 	onMount(() => void installCloseFlush());
+	onMount(() => void updater.init());
 
 	const path = $derived(page.url.pathname.replace(base, '').replace(/\/$/, ''));
 	const isActive = (href: string) => (href === '' ? path === '' : path === `/${href}`);
@@ -165,6 +168,8 @@
 			<button class="dismiss" aria-label="Dismiss" onclick={() => (persistStatus.error = null)}>✕</button>
 		</p>
 	{/if}
+
+	<UpdateBanner />
 
 	<main id="main">
 		{#key path}

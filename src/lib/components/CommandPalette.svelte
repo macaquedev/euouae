@@ -6,6 +6,7 @@
 	import { kbd } from '$lib/keyboard/ui.svelte';
 	import { overlayDuration } from '$lib/motion';
 	import { lexicon } from '$lib/lexicon/store.svelte';
+	import { updater } from '$lib/updater/updater.svelte';
 
 	interface Command {
 		id: string;
@@ -51,6 +52,18 @@
 			swaps: true,
 			run: () => kbd.openProgress()
 		},
+		...(updater.supported
+			? [
+					{
+						id: 'check-updates',
+						label: 'Check for updates',
+						hint: 'See if a newer version is available',
+						group: 'Data',
+						shortcut: [],
+						run: () => void updater.checkNow()
+					}
+				]
+			: []),
 		{
 			id: 'help',
 			label: 'Keyboard shortcuts',

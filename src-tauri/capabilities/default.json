@@ -10,6 +10,8 @@
     "core:window:allow-set-fullscreen",
     "core:window:allow-is-fullscreen",
     "core:window:allow-set-always-on-top",
+    "updater:default",
+    "process:allow-restart",
     "fs:allow-appdata-read-recursive",
     "fs:allow-appdata-write-recursive",
     "dialog:allow-save",
