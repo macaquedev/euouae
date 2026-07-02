@@ -23,6 +23,7 @@
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import ShortcutsHelp from '$lib/components/ShortcutsHelp.svelte';
 	import LexiconPicker from '$lib/components/LexiconPicker.svelte';
+	import ProgressDialog from '$lib/components/ProgressDialog.svelte';
 
 	let { children } = $props();
 
@@ -179,6 +180,9 @@
 {/if}
 {#if kbd.help}
 	<ShortcutsHelp />
+{/if}
+{#if kbd.progress}
+	<ProgressDialog />
 {/if}
 
 <style>

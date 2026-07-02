@@ -16,6 +16,10 @@
     {
       "identifier": "fs:allow-write-text-file",
       "allow": [{ "path": "**" }, { "path": "/**" }]
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [{ "path": "**" }, { "path": "/**" }]
     }
   ]
 }

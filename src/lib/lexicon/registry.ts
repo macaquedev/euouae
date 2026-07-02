@@ -169,3 +169,63 @@ export async function deleteCustomLexicon(name: string): Promise<void> {
 export async function customLexiconBytes(name: string): Promise<Uint8Array> {
 	return readFile(customPath(name));
 }
+
+/**
+ * Every app-data file that makes up the user's custom lexicons — the manifest
+ * plus one `.db` per lexicon — as storage-relative paths, skipping any the
+ * manifest names but whose file is missing. Used by the progress backup
+ * (userdata/progress.ts) to pack and restore custom lexicons alongside the
+ * user database; it owns the path scheme so the backup doesn't have to.
+ */
+export async function customLexiconFilePaths(): Promise<string[]> {
+	const paths: string[] = [];
+	if (await exists(MANIFEST)) paths.push(MANIFEST);
+	for (const entry of await readManifest()) {
+		const path = customPath(entry.name);
+		if (await exists(path)) paths.push(path);
+	}
+	return paths;
+}
+
+/**
+ * Add custom lexicons carried by a progress backup that this device doesn't
+ * already have — used by a merge import (userdata/progress.ts). Names that
+ * clash with a bundled lexicon or an existing custom one are kept as-is (the
+ * local copy wins), and entries whose `.db` bytes are missing are skipped. The
+ * caller supplies the backup's manifest JSON and a lookup from lexicon name to
+ * its stored bytes.
+ */
+export async function importCustomLexicons(
+	manifestJson: string | undefined,
+	dbBytesByName: Map<string, Uint8Array>
+): Promise<{ added: string[]; skipped: string[] }> {
+	const added: string[] = [];
+	const skipped: string[] = [];
+	if (!manifestJson) return { added, skipped };
+
+	let incoming: CustomEntry[];
+	try {
+		const parsed = JSON.parse(manifestJson);
+		incoming = Array.isArray(parsed) ? (parsed as CustomEntry[]) : [];
+	} catch {
+		return { added, skipped };
+	}
+
+	const local = await readManifest();
+	const taken = new Set<string>([...BUNDLED_NAMES, ...local.map((e) => e.name)]);
+	const toAdd: CustomEntry[] = [];
+	for (const entry of incoming) {
+		if (!entry?.name) continue;
+		const bytes = dbBytesByName.get(entry.name);
+		if (taken.has(entry.name) || !bytes) {
+			skipped.push(entry.name);
+			continue;
+		}
+		await writeFile(customPath(entry.name), bytes);
+		taken.add(entry.name);
+		toAdd.push(entry);
+		added.push(entry.name);
+	}
+	if (toAdd.length) await writeManifest([...local, ...toAdd]);
+	return { added, skipped };
+}

@@ -13,6 +13,8 @@
 		hint: string;
 		group: string;
 		shortcut: string[];
+		/** Opens another overlay itself, so running it must not close the palette first. */
+		swaps?: boolean;
 		run: () => void;
 	}
 
@@ -37,7 +39,17 @@
 			hint: `Currently ${lexicon.name}`,
 			group: 'Lexicon',
 			shortcut: ['g', 'x'],
+			swaps: true,
 			run: () => kbd.openLexiconPicker()
+		},
+		{
+			id: 'progress',
+			label: 'Back up or restore progress',
+			hint: 'Export everything to a file, or import a backup',
+			group: 'Data',
+			shortcut: [],
+			swaps: true,
+			run: () => kbd.openProgress()
 		},
 		{
 			id: 'help',
@@ -45,6 +57,7 @@
 			hint: 'See everything you can do from the keyboard',
 			group: 'Help',
 			shortcut: ['?'],
+			swaps: true,
 			run: () => kbd.openHelp()
 		}
 	]);
@@ -66,8 +79,8 @@
 	});
 
 	function run(cmd: Command) {
-		if (cmd.id === 'help' || cmd.id === 'lexicon-switch') {
-			cmd.run(); // these swap overlays themselves
+		if (cmd.swaps) {
+			cmd.run(); // opens another overlay itself; don't close first
 		} else {
 			kbd.close();
 			cmd.run();

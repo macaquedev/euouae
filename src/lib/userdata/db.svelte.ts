@@ -9,7 +9,9 @@ import type { Database } from '@sqlite.org/sqlite-wasm';
 import { exists, readFile, writeFile } from '$lib/platform/storage';
 import { sqliteRuntime } from '$lib/sqlite/runtime';
 
-const SNAPSHOT_FILE = 'euouae.sqlite3';
+/** The single user-data file in app storage. Exported so the progress
+ *  backup (userdata/progress.ts) can pack and restore it by name. */
+export const USER_DB_FILE = 'euouae.sqlite3';
 
 const MIGRATIONS = `
 CREATE TABLE IF NOT EXISTS cards (
@@ -100,13 +102,13 @@ interface UserDb {
 let dbPromise: Promise<UserDb> | undefined;
 
 async function loadSnapshot(): Promise<Uint8Array | null> {
-	if (!(await exists(SNAPSHOT_FILE))) return null;
-	const bytes = await readFile(SNAPSHOT_FILE);
+	if (!(await exists(USER_DB_FILE))) return null;
+	const bytes = await readFile(USER_DB_FILE);
 	return bytes.length > 0 ? bytes : null;
 }
 
 async function writeSnapshot(bytes: Uint8Array): Promise<void> {
-	await writeFile(SNAPSHOT_FILE, bytes);
+	await writeFile(USER_DB_FILE, bytes);
 }
 
 async function open(): Promise<UserDb> {
@@ -171,6 +173,18 @@ export const persistStatus = $state<{ error: string | null }>({ error: null });
 
 let writing = false;
 let writeAgain = false;
+let suspended = false;
+
+/**
+ * Permanently stop snapshotting this session's DB. Used by a progress restore
+ * (userdata/progress.ts) right before it overwrites the on-disk file: the live
+ * in-memory DB still holds the pre-import data, so any further fire-and-forget
+ * `persistUserData()` would clobber the freshly imported snapshot before the
+ * app reloads. There is no resume — a restore always reloads the app.
+ */
+export function suspendPersistence(): void {
+	suspended = true;
+}
 
 /**
  * Snapshot the user DB to its file. Coalesces concurrent calls (a write requested
@@ -179,6 +193,9 @@ let writeAgain = false;
  * every caller invokes this fire-and-forget.
  */
 export async function persistUserData(): Promise<void> {
+	// A restore is underway and the app is about to reload: never write the stale
+	// in-memory DB back over the imported snapshot.
+	if (suspended) return;
 	// No early "nothing opened yet" guard: every real caller is either a mutator
 	// that already called userDb() itself, or the Retry button, which only ever
 	// appears after a save was attempted and failed — getDb() below re-attempts
