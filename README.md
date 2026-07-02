@@ -4,17 +4,52 @@
 
 # euouae
 
-A fast, keyboard-first study and word-adjudication tool for tournament Scrabble
-players — an offline replacement for Collins Zyzzyva. (Named after *EUOUAE*, a
-legal all-vowel word.)
+**euouae** is a study and word-checking app for competitive Scrabble and word-game
+players. It's a fast, offline alternative to Collins Zyzzyva — the tool many
+tournament players use to look words up and drill them into memory. (The name is
+*EUOUAE*, a real word made entirely of vowels.)
 
-- **Judge** — instantly check whether words are valid.
-- **Search** — query the lexicon by pattern, anagram, hooks, length, probability, and more.
-- **Word Info** — definitions, hooks, anagrams, and stats for any word.
-- **Quiz + Cardbox** — spaced-repetition study (Leitner and FSRS) that mirrors Zyzzyva's schedule.
-- **Lists** — build and manage your own study lists.
+## What you can do
 
-Ships with the **CSW24**, **NWL23**, and **FRA24** lexicons and works fully offline.
+- **Judge words instantly.** Type in one or more words and euouae tells you which
+  are valid in the dictionary you've chosen — the same job a tournament word
+  judge does at the board.
+- **Search for words** by almost any criterion: a letter pattern, an anagram
+  (which words a jumble of letters can spell), word length, the *hooks* a word
+  takes (letters you can add to the front or back to make another valid word),
+  how likely you are to draw it, and more.
+- **Look up any word** to see its definition, its anagrams, the hooks it takes,
+  and other study stats.
+- **Practise with spaced repetition.** Quiz yourself and the app brings each word
+  back just as you're about to forget it, so your time goes to the words you
+  don't yet know cold. Two study systems are built in:
+  - **Cardbox** — the classic flashcard-box method (words you keep getting right
+    come up less often; ones you miss come back sooner). It's the same system
+    Zyzzyva uses, so if you're coming from Zyzzyva your routine and progress
+    carry straight over.
+  - **FSRS** — a modern scheduling algorithm that learns how well *you*
+    personally remember each word and picks the best moment to review it.
+- **Build and manage word lists**, import them from a file, and export them in
+  several formats (plain word lists, anagram question-and-answer sheets, and more).
+
+## What makes it different
+
+- **Bring your own word lists.** You're not limited to the built-in dictionaries.
+  Paste a list of words (or import a file) and euouae builds a complete, studyable
+  lexicon from it in seconds — automatically working out every word's anagrams,
+  hooks, point values, and draw odds. Great for a club list, a themed set, or a
+  list of tricky words you keep missing.
+- **Any language, or your own tiles.** Pick a built-in letter set — English,
+  Spanish, French, German, or Russian — or define your own tiles from scratch
+  (each letter's point value, how many are in the bag, and how many blanks). So
+  you can study in another language or under house rules, not just standard
+  English Scrabble.
+- **Several dictionaries, switch anytime.** Comes with Collins **CSW24**, the
+  North American **NWL23**, and French **FRA24** built in.
+- **Fully offline and fast.** Everything lives on your device — no account and no
+  internet needed once it's installed — and it's built to be quick and
+  keyboard-driven.
+- **Free and cross-platform.** Runs on Windows, macOS, and Linux.
 
 ## Download
 
