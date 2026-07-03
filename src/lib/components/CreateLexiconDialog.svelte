@@ -222,19 +222,10 @@
 		return { alphabet: new Alphabet(spec), choice: { kind: 'custom', spec } };
 	}
 
-	// Generous but finite: a full Collins word list is a few MB of text; this
-	// stops a wrong/huge file pick from hanging the tab reading it in.
-	const MAX_IMPORT_BYTES = 64 * 1024 * 1024;
-
 	async function onFile(event: Event) {
 		const input = event.target as HTMLInputElement;
 		const file = input.files?.[0];
 		if (!file) return;
-		if (file.size > MAX_IMPORT_BYTES) {
-			error = `${file.name} is ${Math.round(file.size / (1024 * 1024))} MB — over the ${MAX_IMPORT_BYTES / (1024 * 1024)} MB limit for a word list.`;
-			input.value = '';
-			return;
-		}
 		try {
 			const contents = await file.text();
 			fileName = file.name;

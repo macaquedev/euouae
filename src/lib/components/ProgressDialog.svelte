@@ -14,10 +14,6 @@
 
 	const dur = overlayDuration();
 
-	// A backup carries every lexicon .db, so it can be large; guard against a
-	// wildly-wrong file rather than trying to read gigabytes into memory.
-	const MAX_IMPORT_BYTES = 512 * 1024 * 1024;
-
 	type Phase = 'menu' | 'busy' | 'confirm';
 
 	let phase = $state<Phase>('menu');
@@ -54,10 +50,6 @@
 		const file = input.files?.[0];
 		input.value = '';
 		if (!file) return;
-		if (file.size > MAX_IMPORT_BYTES) {
-			fail(`${file.name} is too large to be a progress backup.`);
-			return;
-		}
 		error = null;
 		busyLabel = 'Reading backup…';
 		phase = 'busy';
