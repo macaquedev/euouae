@@ -13,7 +13,10 @@
 		// When set, the user must type this exact string before confirm is enabled —
 		// used to guard irreversible actions like deleting a list by its name.
 		requireText?: string;
-		onconfirm: () => void;
+		// When set, an extra checkbox (ticked by default) with this label is shown;
+		// its state is passed to onconfirm so a delete can offer "…and also keep X".
+		checkboxLabel?: string;
+		onconfirm: (checked: boolean) => void;
 		oncancel: () => void;
 	}
 
@@ -24,12 +27,14 @@
 		cancelLabel = 'Cancel',
 		danger = false,
 		requireText,
+		checkboxLabel,
 		onconfirm,
 		oncancel
 	}: Props = $props();
 
 	const dur = overlayDuration();
 
+	let checked = $state(true);
 	let typed = $state('');
 	let inputEl = $state<HTMLInputElement | null>(null);
 	let confirmEl = $state<HTMLButtonElement | null>(null);
@@ -58,7 +63,7 @@
 			oncancel();
 		} else if (event.key === 'Enter' && ready) {
 			event.preventDefault();
-			onconfirm();
+			onconfirm(checked);
 		}
 	}
 </script>
@@ -77,6 +82,12 @@
 	>
 		<h2>{title}</h2>
 		{#if message}<p class="message">{message}</p>{/if}
+		{#if checkboxLabel}
+			<label class="opt">
+				<input type="checkbox" bind:checked />
+				<span>{checkboxLabel}</span>
+			</label>
+		{/if}
 		{#if requireText !== undefined}
 			<input
 				bind:this={inputEl}
@@ -94,7 +105,7 @@
 				bind:this={confirmEl}
 				class="confirm"
 				class:danger
-				onclick={onconfirm}
+				onclick={() => onconfirm(checked)}
 				disabled={!ready}
 			>
 				{confirmLabel}
@@ -141,7 +152,25 @@
 		line-height: 1.45;
 	}
 
-	input {
+	.opt {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.55rem;
+		margin-bottom: var(--s4);
+		font-size: 0.9rem;
+		line-height: 1.4;
+		color: var(--ink-dim);
+		cursor: pointer;
+	}
+	.opt input[type='checkbox'] {
+		width: auto;
+		margin: 0.15rem 0 0;
+		accent-color: var(--maple);
+		flex-shrink: 0;
+		cursor: pointer;
+	}
+
+	input[type='text'] {
 		width: 100%;
 		background: var(--surface-2);
 		color: var(--ink);
@@ -151,10 +180,10 @@
 		font: inherit;
 		margin-bottom: var(--s4);
 	}
-	input:focus {
+	input[type='text']:focus {
 		border-color: var(--maple);
 	}
-	input::placeholder {
+	input[type='text']::placeholder {
 		color: var(--ink-faint);
 	}
 

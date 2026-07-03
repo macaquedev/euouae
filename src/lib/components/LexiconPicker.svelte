@@ -2,7 +2,10 @@
 	import { fly } from 'svelte/transition';
 	import { overlayDuration } from '$lib/motion';
 	import { lexicon } from '$lib/lexicon/store.svelte';
-	import { deleteCustomLexicon } from '$lib/lexicon/registry';
+	import { deleteCustomLexicon, type LexiconInfo } from '$lib/lexicon/registry';
+	import { serializeTileSets, TILESET_EXTENSION } from '$lib/lexicon/tileset';
+	import { saveAlphabet } from '$lib/lexicon/savedAlphabets';
+	import { saveTextFile } from '$lib/platform/download';
 	import { kbd } from '$lib/keyboard/ui.svelte';
 	import { trapFocus } from '$lib/keyboard/focusTrap';
 	import CreateLexiconDialog from './CreateLexiconDialog.svelte';
@@ -11,7 +14,7 @@
 	const dur = overlayDuration();
 
 	let showCreate = $state(false);
-	let pendingDelete = $state<string | null>(null);
+	let pendingDelete = $state<LexiconInfo | null>(null);
 	let menuEl = $state<HTMLDivElement | null>(null);
 
 	const status = $derived(lexicon.error ? 'error' : lexicon.engine ? 'ready' : 'loading');
@@ -28,13 +31,31 @@
 		lexicon.refresh().then(() => lexicon.select(name));
 	}
 
-	async function confirmDelete() {
-		const name = pendingDelete;
+	async function confirmDelete(keepTileSet: boolean) {
+		const l = pendingDelete;
 		pendingDelete = null;
 		kbd.close();
-		if (!name) return;
-		await deleteCustomLexicon(name);
-		await lexicon.forget(name);
+		if (!l) return;
+		// A bespoke bag is baked into the lexicon and would go with it. If the user
+		// wants to keep it, copy it into the tile-set library first so it survives.
+		if (keepTileSet && !l.alphabetKey) {
+			const a = l.alphabet;
+			await saveAlphabet({ name: a.name, tiles: a.tiles, blankCount: a.blankCount }).catch(() => {});
+		}
+		await deleteCustomLexicon(l.name);
+		await lexicon.forget(l.name);
+	}
+
+	// Export a custom lexicon's bespoke tile set as a shareable .json — the way to
+	// pull a hand-built bag back out of the lexicon it was baked into.
+	async function exportTileSet(l: LexiconInfo) {
+		const a = l.alphabet;
+		const slug = a.name.replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'tile-set';
+		await saveTextFile(
+			`${slug}.${TILESET_EXTENSION}`,
+			serializeTileSets([{ name: a.name, tiles: a.tiles, blankCount: a.blankCount }]),
+			{ name: 'Tile set', extensions: [TILESET_EXTENSION] }
+		).catch(() => {});
 	}
 
 	// Jump straight into the menu when it opens, so a keyboard user never lands
@@ -127,11 +148,21 @@
 								{l.alphabet.name}{#if l.wordCount} · {l.wordCount.toLocaleString()} words{/if}
 							</span>
 						</button>
+						{#if !l.alphabetKey}
+							<button
+								class="tiles"
+								title={`Export ${l.name}'s tile set`}
+								aria-label={`Export ${l.name}'s tile set`}
+								onclick={() => exportTileSet(l)}
+							>
+								⤓
+							</button>
+						{/if}
 						<button
 							class="trash"
 							title={`Delete ${l.name}`}
 							aria-label={`Delete ${l.name}`}
-							onclick={() => (pendingDelete = l.name)}
+							onclick={() => (pendingDelete = l)}
 						>
 							✕
 						</button>
@@ -153,10 +184,13 @@
 {#if pendingDelete}
 	<ConfirmModal
 		title="Delete custom lexicon"
-		message={`Delete "${pendingDelete}"? Its word data is removed; saved lists and card progress under this lexicon are kept.`}
+		message={`Delete "${pendingDelete.name}"? Its word data is removed; saved lists and card progress under this lexicon are kept.`}
 		confirmLabel="Delete"
 		danger
-		requireText={pendingDelete}
+		requireText={pendingDelete.name}
+		checkboxLabel={pendingDelete.alphabetKey
+			? undefined
+			: `Keep its tile set “${pendingDelete.alphabet.name}” in your tile-set library`}
 		onconfirm={confirmDelete}
 		oncancel={() => (pendingDelete = null)}
 	/>
@@ -294,7 +328,8 @@
 	.item-row .item:hover {
 		background: transparent;
 	}
-	.trash {
+	.trash,
+	.tiles {
 		background: transparent;
 		border: none;
 		color: var(--ink-faint);
@@ -305,6 +340,14 @@
 	.trash:hover {
 		color: var(--invalid);
 		background: var(--invalid-wash);
+	}
+	.tiles {
+		font-size: 1rem;
+		line-height: 1;
+	}
+	.tiles:hover {
+		color: var(--maple);
+		background: var(--surface-2);
 	}
 
 	.create {

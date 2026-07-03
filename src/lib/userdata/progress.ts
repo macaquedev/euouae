@@ -15,6 +15,7 @@ import { sqliteRuntime } from '$lib/sqlite/runtime';
 import { openSerializedDbBytes } from '$lib/lexicon/sqlite';
 import { exists, readFile, writeFile, removeFile } from '$lib/platform/storage';
 import { customLexiconFilePaths, importCustomLexicons } from '$lib/lexicon/registry';
+import { SAVED_ALPHABETS_FILE, importSavedAlphabets } from '$lib/lexicon/savedAlphabets';
 import { USER_DB_FILE, userDb, persistUserData, suspendPersistence } from './db.svelte';
 
 export const PROGRESS_FORMAT = 'euouae-progress';
@@ -66,7 +67,7 @@ class NotAProgressBackup extends Error {
 export async function exportProgress(): Promise<Uint8Array> {
 	await persistUserData();
 
-	const paths = [USER_DB_FILE, ...(await customLexiconFilePaths())];
+	const paths = [USER_DB_FILE, SAVED_ALPHABETS_FILE, ...(await customLexiconFilePaths())];
 	const files: { path: string; data: Uint8Array }[] = [];
 	for (const path of paths) {
 		if (await exists(path)) files.push({ path, data: await readFile(path) });
@@ -164,7 +165,7 @@ export async function applyProgressBundle(
 async function replaceProgressBundle(files: Map<string, Uint8Array>): Promise<void> {
 	suspendPersistence();
 
-	const stale = await customLexiconFilePaths();
+	const stale = [...(await customLexiconFilePaths()), SAVED_ALPHABETS_FILE];
 	for (const path of stale) {
 		if (!files.has(path) && (await exists(path))) await removeFile(path);
 	}
@@ -200,6 +201,12 @@ async function mergeProgressBundle(files: Map<string, Uint8Array>): Promise<void
 		if (name) dbBytesByName.set(name, data);
 	}
 	await importCustomLexicons(manifestJson, dbBytesByName);
+
+	// Fold in saved tile sets the backup carries that this device is missing.
+	const alphabetsBytes = files.get(SAVED_ALPHABETS_FILE);
+	await importSavedAlphabets(
+		alphabetsBytes ? new TextDecoder().decode(alphabetsBytes) : undefined
+	);
 
 	await persistUserData();
 }

@@ -5,6 +5,7 @@
 	import { lexicon } from '$lib/lexicon/store.svelte';
 	import { ListStore, parseWords, type ListSummary } from '$lib/userdata/lists';
 	import { buildExport, type ExportAttribute, type ExportFormat } from '$lib/userdata/export';
+	import { saveTextFile } from '$lib/platform/download';
 	import { CardStore } from '$lib/quiz/cards';
 	import { plural } from '$lib/text';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -184,34 +185,7 @@
 		if (!store || !list) return;
 		const body = buildExport(store.orderedWords(list.id), lexicon.engine, format, attributes);
 		const filename = `${list.name.replace(/[^\w-]+/g, '_')}.txt`;
-		await saveTextFile(filename, body);
-	}
-
-	async function saveTextFile(filename: string, body: string) {
-		// The Tauri webview has no download manager, so the browser anchor trick is a
-		// silent no-op there: ask for a path natively and write the file ourselves.
-		if ('__TAURI_INTERNALS__' in window) {
-			const { save } = await import('@tauri-apps/plugin-dialog');
-			const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-			const path = await save({
-				defaultPath: filename,
-				filters: [{ name: 'Text', extensions: ['txt'] }]
-			});
-			if (path) await writeTextFile(path, body);
-			return;
-		}
-
-		const url = URL.createObjectURL(new Blob([body], { type: 'text/plain' }));
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = filename;
-		// Firefox needs the anchor in the DOM for a programmatic click, and the
-		// object URL must outlive the click (revoking synchronously cancels the
-		// download), so tidy up on the next tick.
-		document.body.appendChild(a);
-		a.click();
-		a.remove();
-		setTimeout(() => URL.revokeObjectURL(url), 0);
+		await saveTextFile(filename, body, { name: 'Text', extensions: ['txt'] });
 	}
 
 	// One-click fix for a paste/import with words the lexicon rejects: keep only

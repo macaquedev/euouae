@@ -3,6 +3,7 @@
 	import { overlayDuration } from '$lib/motion';
 	import { trapFocus } from '$lib/keyboard/focusTrap';
 	import { kbd } from '$lib/keyboard/ui.svelte';
+	import { saveBinaryFile } from '$lib/platform/download';
 	import {
 		exportProgress,
 		readProgressBundle,
@@ -38,7 +39,10 @@
 		try {
 			const bytes = await exportProgress();
 			const date = new Date().toISOString().slice(0, 10);
-			await saveBinaryFile(`euouae-progress-${date}.${PROGRESS_EXTENSION}`, bytes);
+			await saveBinaryFile(`euouae-progress-${date}.${PROGRESS_EXTENSION}`, bytes, {
+				name: 'euouae progress',
+				extensions: [PROGRESS_EXTENSION]
+			});
 			kbd.close();
 		} catch (err) {
 			fail(`Couldn't export your progress: ${msg(err)}`);
@@ -77,32 +81,6 @@
 		} catch (err) {
 			fail(`Couldn't import this backup: ${msg(err)}`);
 		}
-	}
-
-	async function saveBinaryFile(filename: string, bytes: Uint8Array) {
-		// The Tauri webview has no download manager (the anchor trick is a silent
-		// no-op there): ask for a path natively and write the bytes ourselves.
-		if ('__TAURI_INTERNALS__' in window) {
-			const { save } = await import('@tauri-apps/plugin-dialog');
-			const { writeFile } = await import('@tauri-apps/plugin-fs');
-			const path = await save({
-				defaultPath: filename,
-				filters: [{ name: 'euouae progress', extensions: [PROGRESS_EXTENSION] }]
-			});
-			if (path) await writeFile(path, bytes);
-			return;
-		}
-
-		// exportProgress() returns an ArrayBuffer-backed array, so this cast is safe.
-		const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = filename;
-		document.body.appendChild(a);
-		a.click();
-		a.remove();
-		setTimeout(() => URL.revokeObjectURL(url), 0);
 	}
 
 	const createdAtLabel = $derived(

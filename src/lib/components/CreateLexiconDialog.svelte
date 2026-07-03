@@ -5,6 +5,22 @@
 	import { kbd } from '$lib/keyboard/ui.svelte';
 	import { ALPHABETS, ENGLISH } from '$lib/lexicon/alphabets';
 	import { Alphabet, type AlphabetSpec } from '$lib/lexicon/alphabet';
+	import {
+		draftFromAlphabet,
+		normalGlyph,
+		validateTileSet,
+		specFromDraft,
+		tileSetSummary,
+		parseTileSetsFile,
+		type DraftTile
+	} from '$lib/lexicon/tileset';
+	import {
+		listSavedAlphabets,
+		saveAlphabet,
+		deleteSavedAlphabet,
+		validateAlphabetName,
+		type SavedAlphabet
+	} from '$lib/lexicon/savedAlphabets';
 	import { buildCustomLexicon, type CustomBuildPhase } from '$lib/lexicon/customBuild';
 	import { parseSource } from '$lib/lexicon/build';
 	import {
@@ -13,7 +29,8 @@
 		type AlphabetKey,
 		type AlphabetChoice
 	} from '$lib/lexicon/registry';
-	import Tile from './Tile.svelte';
+	import TileRack from './TileRack.svelte';
+	import TileSetEditor from './TileSetEditor.svelte';
 
 	interface Props {
 		oncreated: (name: string) => void;
@@ -29,15 +46,8 @@
 		label: ALPHABETS[key].name
 	}));
 
-	interface DraftTile {
-		glyph: string;
-		value: number;
-		frequency: number;
-		vowel: boolean;
-	}
-
-	const draftFrom = (a: Alphabet): DraftTile[] =>
-		a.tiles.map((t) => ({ glyph: t.glyph, value: t.value, frequency: t.frequency, vowel: t.vowel }));
+	const draftFromSpec = (spec: AlphabetSpec): DraftTile[] =>
+		spec.tiles.map((t) => ({ glyph: t.glyph, value: t.value, frequency: t.frequency, vowel: t.vowel }));
 
 	let name = $state('');
 	let text = $state('');
@@ -60,19 +70,29 @@
 			: 0
 	);
 	let fileInput = $state<HTMLInputElement | null>(null);
+	let tilesFileInput = $state<HTMLInputElement | null>(null);
 	let nameInput = $state<HTMLInputElement | null>(null);
 
-	// The tile set starts as a preset shown in full below; editing any value forks it
-	// into a renameable custom set ("English (customised)").
+	// — Tile set selection ——————————————————————————————————————————————————
+	// The bag starts as a preset shown in full below. Editing it, picking one of
+	// the user's saved tile sets, or importing a file forks it into an editable
+	// custom set that can be saved back to the library.
+	let savedSets = $state<SavedAlphabet[]>([]);
 	let basePreset = $state<AlphabetKey>('ENGLISH');
+	/** The saved tile set the draft came from, if any — Save then updates it. */
+	let savedOrigin = $state<string | null>(null);
 	let customName = $state('');
 	let blankCount = $state(ENGLISH.blankCount);
-	let draftTiles = $state<DraftTile[]>(draftFrom(ENGLISH));
+	let draftTiles = $state<DraftTile[]>(draftFromAlphabet(ENGLISH));
 
 	// The full tile editor stays collapsed behind a compact preview until asked for.
 	let editing = $state(false);
-	// Whether the draft has been forked off its base preset into a custom tile set.
+	// Whether the draft has forked off its base preset into a custom tile set.
 	let forked = $state(false);
+	// Transient result of a "Save to library" or "Import" action.
+	let saveNote = $state<{ ok: boolean; text: string } | null>(null);
+	// Inline confirm for deleting the selected saved tile set from the library.
+	let confirmDeleteSet = $state(false);
 
 	$effect(() => nameInput?.focus());
 
@@ -84,23 +104,51 @@
 		return () => kbd.unlock();
 	});
 
+	$effect(() => {
+		void refreshSaved();
+	});
+
+	async function refreshSaved() {
+		savedSets = await listSavedAlphabets().catch(() => []);
+	}
+
 	const preset = $derived(ALPHABETS[basePreset]);
-	// What the dropdown shows: a preset by key, or "Custom" once forked.
-	const selectValue = $derived<AlphabetKey | 'CUSTOM'>(forked ? 'CUSTOM' : basePreset);
+	// What the dropdown shows: a preset by key, a saved set, or "Custom" once forked.
+	const selectValue = $derived<string>(
+		forked ? (savedOrigin ? `saved:${savedOrigin}` : 'CUSTOM') : basePreset
+	);
 
 	function loadPreset(key: AlphabetKey) {
 		basePreset = key;
 		blankCount = ALPHABETS[key].blankCount;
-		draftTiles = draftFrom(ALPHABETS[key]);
+		draftTiles = draftFromAlphabet(ALPHABETS[key]);
 		customName = '';
 		forked = false;
 		editing = false;
+		savedOrigin = null;
+		saveNote = null;
+		confirmDeleteSet = false;
+	}
+
+	function loadSaved(setName: string) {
+		const set = savedSets.find((s) => s.name === setName);
+		if (!set) return;
+		blankCount = set.spec.blankCount;
+		draftTiles = draftFromSpec(set.spec);
+		customName = set.name;
+		forked = true;
+		editing = false;
+		savedOrigin = set.name;
+		saveNote = null;
+		confirmDeleteSet = false;
 	}
 
 	function onSelect(value: string) {
 		if (value === 'CUSTOM') {
 			loadPreset('ENGLISH'); // the dropdown's "Custom" always starts from English
 			startCustom();
+		} else if (value.startsWith('saved:')) {
+			loadSaved(value.slice('saved:'.length));
 		} else {
 			loadPreset(value as AlphabetKey);
 		}
@@ -110,18 +158,27 @@
 	function startCustom() {
 		forked = true;
 		editing = true;
+		savedOrigin = null;
+		saveNote = null;
+	}
+
+	// "Customise" a preset forks it; "Edit tiles" just reopens an existing fork.
+	function startEdit() {
+		if (forked) editing = true;
+		else startCustom();
 	}
 
 	function resetTiles() {
-		loadPreset(basePreset);
+		if (savedOrigin) loadSaved(savedOrigin);
+		else loadPreset(basePreset);
 	}
 
 	const wordCount = $derived(
 		text.split('\n').filter((l) => l.trim() !== '' && !l.startsWith('#')).length
 	);
 
-	// Tile glyphs normalised once for comparison, validation, and building.
-	const normalGlyphs = $derived(draftTiles.map((t) => t.glyph.trim().toUpperCase()));
+	// Tile glyphs normalised once for the preview, validation, and building.
+	const normalGlyphs = $derived(draftTiles.map((t) => normalGlyph(t.glyph)));
 
 	// The name shown/saved for a forked tile set; the placeholder is used verbatim
 	// when the rename field is left blank.
@@ -129,51 +186,21 @@
 	const tilesetName = $derived(customName.trim() || defaultName);
 
 	// Null when the tile set is usable, else the first problem to surface.
-	const tilesetError = $derived.by(() => {
-		if (draftTiles.length === 0) return 'Add at least one tile.';
-		const seen = new Set<string>();
-		for (let i = 0; i < draftTiles.length; i++) {
-			const glyph = normalGlyphs[i];
-			const tile = draftTiles[i];
-			if (!glyph) return 'Every tile needs a letter.';
-			if (seen.has(glyph)) return `Duplicate tile “${glyph}”.`;
-			seen.add(glyph);
-			if (!Number.isInteger(tile.value) || tile.value < 0)
-				return `“${glyph}” needs a point value of 0 or more.`;
-			// 0 is allowed: a tile that's valid in the lexicon but absent from the
-			// physical bag, playable only by spending a blank on it.
-			if (!Number.isInteger(tile.frequency) || tile.frequency < 0)
-				return `“${glyph}” needs a bag count of 0 or more.`;
-		}
-		if (!Number.isInteger(blankCount) || blankCount < 0) return 'Blanks must be 0 or more.';
-		return null;
-	});
+	const tilesetError = $derived(validateTileSet(draftTiles, blankCount));
 
-	// At-a-glance summary of the tile set, shown under its name.
-	const tileCount = $derived(draftTiles.length);
-	const bagCount = $derived(
-		draftTiles.reduce((sum, t) => sum + (Number.isFinite(t.frequency) ? t.frequency : 0), 0) +
-			(Number.isFinite(blankCount) ? blankCount : 0)
-	);
-	const blankLabel = $derived(blankCount === 1 ? '1 blank' : `${blankCount} blanks`);
-	const summary = $derived(`${tileCount} tiles · ${bagCount} in the bag · ${blankLabel}`);
+	// At-a-glance summary + rack preview of the tile set.
+	const summary = $derived(tileSetSummary(draftTiles, blankCount));
 	const displayName = $derived(forked ? tilesetName : preset.name);
+	const rackTiles = $derived(
+		draftTiles.map((t, i) => ({ glyph: normalGlyphs[i], value: t.value, frequency: t.frequency }))
+	);
 
 	// The Alphabet this dialog would build with right now — null while the tile
 	// editor itself is in an invalid state (tilesetError covers that case).
 	const activeAlphabet = $derived.by(() => {
 		if (!forked) return preset;
 		if (tilesetError !== null) return null;
-		return new Alphabet({
-			name: tilesetName,
-			blankCount,
-			tiles: draftTiles.map((t, i) => ({
-				glyph: normalGlyphs[i],
-				value: t.value,
-				frequency: t.frequency,
-				vowel: t.vowel
-			}))
-		});
+		return new Alphabet(specFromDraft(tilesetName, draftTiles, blankCount));
 	});
 
 	// The first word that uses a character outside the active tile set, if any —
@@ -196,30 +223,81 @@
 			firstInvalidWord === null
 	);
 
-	function addTile() {
-		draftTiles = [...draftTiles, { glyph: '', value: 1, frequency: 1, vowel: false }];
-	}
-
-	function removeTile(index: number) {
-		draftTiles = draftTiles.filter((_, i) => i !== index);
-	}
+	// A forked, valid tile set can be saved to the reusable library.
+	const canSave = $derived(forked && tilesetError === null);
 
 	/** The Alphabet to build with, plus the choice to persist with the lexicon. */
 	function resolveAlphabet(): { alphabet: Alphabet; choice: AlphabetChoice } {
 		if (!forked) {
 			return { alphabet: preset, choice: { kind: 'preset', key: basePreset } };
 		}
-		const spec: AlphabetSpec = {
-			name: tilesetName,
-			blankCount,
-			tiles: draftTiles.map((t, i) => ({
-				glyph: normalGlyphs[i],
-				value: t.value,
-				frequency: t.frequency,
-				vowel: t.vowel
-			}))
-		};
+		const spec = specFromDraft(tilesetName, draftTiles, blankCount);
 		return { alphabet: new Alphabet(spec), choice: { kind: 'custom', spec } };
+	}
+
+	async function saveToLibrary() {
+		if (!canSave) return;
+		saveNote = null;
+		const spec = specFromDraft(tilesetName, draftTiles, blankCount);
+		const others = savedSets.map((s) => s.name).filter((n) => n !== savedOrigin);
+		const nameError = validateAlphabetName(spec.name, others);
+		if (nameError) {
+			saveNote = { ok: false, text: nameError };
+			return;
+		}
+		try {
+			await saveAlphabet(spec);
+			await refreshSaved();
+			savedOrigin = spec.name;
+			customName = spec.name;
+			saveNote = { ok: true, text: `Saved “${spec.name}” to your tile sets.` };
+		} catch (err) {
+			saveNote = { ok: false, text: err instanceof Error ? err.message : String(err) };
+		}
+	}
+
+	// Remove the selected saved tile set from the library. Its tiles stay loaded as
+	// an unsaved custom bag so an in-progress build isn't disrupted.
+	async function deleteSavedSet() {
+		const name = savedOrigin;
+		confirmDeleteSet = false;
+		if (!name) return;
+		try {
+			await deleteSavedAlphabet(name);
+			await refreshSaved();
+			savedOrigin = null;
+			forked = true;
+			saveNote = { ok: true, text: `Deleted “${name}” from your tile sets.` };
+		} catch (err) {
+			saveNote = { ok: false, text: err instanceof Error ? err.message : String(err) };
+		}
+	}
+
+	async function onTilesFile(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file) return;
+		saveNote = null;
+		try {
+			const specs = parseTileSetsFile(await file.text());
+			const spec = specs[0];
+			blankCount = spec.blankCount;
+			draftTiles = draftFromSpec(spec);
+			customName = spec.name;
+			forked = true;
+			editing = false;
+			savedOrigin = null;
+			saveNote = {
+				ok: true,
+				text:
+					specs.length > 1
+						? `Loaded “${spec.name}”. The file's other ${specs.length - 1} tile ${specs.length - 1 === 1 ? 'set was' : 'sets were'} ignored — import them from Manage tile sets.`
+						: `Loaded “${spec.name}”. Save it to keep it in your library.`
+			};
+		} catch (err) {
+			saveNote = { ok: false, text: err instanceof Error ? err.message : String(err) };
+		}
 	}
 
 	async function onFile(event: Event) {
@@ -380,11 +458,39 @@
 						onchange={(e) => onSelect(e.currentTarget.value)}
 						disabled={building}
 					>
-						{#each presetOptions as opt (opt.key)}
-							<option value={opt.key}>{opt.label}</option>
-						{/each}
+						<optgroup label="Built-in">
+							{#each presetOptions as opt (opt.key)}
+								<option value={opt.key}>{opt.label}</option>
+							{/each}
+						</optgroup>
+						{#if savedSets.length}
+							<optgroup label="Your tile sets">
+								{#each savedSets as set (set.name)}
+									<option value={`saved:${set.name}`}>{set.name}</option>
+								{/each}
+							</optgroup>
+						{/if}
 						<option value="CUSTOM">Custom…</option>
 					</select>
+				</div>
+
+				<div class="tiles-actions">
+					<input
+						bind:this={tilesFileInput}
+						type="file"
+						accept=".json,application/json"
+						onchange={onTilesFile}
+						hidden
+					/>
+					<button
+						type="button"
+						class="btn btn--ghost sm"
+						onclick={() => tilesFileInput?.click()}
+						disabled={building}
+					>
+						Import tile set…
+					</button>
+					<span class="faint">Bring in a shared <code>.json</code> tile set</span>
 				</div>
 
 				<div class="bag" class:custom={forked}>
@@ -406,131 +512,92 @@
 							{/if}
 							<span class="bag-meta">{summary}</span>
 						</div>
-						{#if !editing}
-							<button type="button" class="btn btn--ghost sm" onclick={startCustom} disabled={building}>
-								{forked ? 'Edit tiles' : 'Customise'}
-							</button>
-						{/if}
-					</div>
-
-					{#if editing}
-						<div class="editor">
-							<div class="table">
-								<div class="thead">
-									<div class="erow ehead" aria-hidden="true">
-										<span class="c-tile">Tile</span>
-										<span class="c-num">Points</span>
-										<span class="c-num">In bag</span>
-										<span class="c-vowel">Vowel</span>
-										<span class="c-x"></span>
-									</div>
-									<!-- Blanks are a fixed tile: worth 0, never a vowel, can't be removed.
-									     The bag count doubles as "how many blanks"; 0 means none. -->
-									<div class="erow blank-row" title="Blank tiles">
-										<span class="cell static c-tile">?</span>
-										<span class="cell static c-num">0</span>
-										<input
-											class="cell c-num"
-											type="number"
-											bind:value={blankCount}
-											min="0"
-											max="10"
-											disabled={building}
-											aria-label="Number of blank tiles"
-										/>
-										<span class="c-vowel"></span>
-										<span class="c-x"></span>
-									</div>
-								</div>
-
-								{#each draftTiles as tile, i (i)}
-									<div class="erow">
-										<input
-											class="cell glyph c-tile"
-											type="text"
-											bind:value={tile.glyph}
-											maxlength="4"
-											spellcheck="false"
-											autocapitalize="characters"
-											disabled={building}
-											aria-label="Tile {i + 1} letters"
-										/>
-										<input
-											class="cell c-num"
-											type="number"
-											bind:value={tile.value}
-											min="0"
-											disabled={building}
-											aria-label="Tile {i + 1} points"
-										/>
-										<input
-											class="cell c-num"
-											type="number"
-											bind:value={tile.frequency}
-											min="0"
-											disabled={building}
-											aria-label="Tile {i + 1} bag count, 0 = blank-only"
-										/>
-										<span class="c-vowel">
-											<input
-												type="checkbox"
-												bind:checked={tile.vowel}
-												disabled={building}
-												aria-label="Tile {i + 1} is a vowel"
-											/>
-										</span>
-										<button
-											type="button"
-											class="x c-x"
-											onclick={() => removeTile(i)}
-											disabled={building}
-											aria-label="Remove tile {i + 1}"
-										>
-											×
-										</button>
-									</div>
-								{/each}
-							</div>
-
-							<div class="editor-foot">
-								<button type="button" class="btn btn--ghost sm" onclick={addTile} disabled={building}>
-									+ Add tile
+						<div class="bag-actions">
+							{#if confirmDeleteSet}
+								<span class="del-q">Remove from your library?</span>
+								<button
+									type="button"
+									class="btn btn--ghost sm"
+									onclick={deleteSavedSet}
+									disabled={building}
+								>
+									Delete
 								</button>
-								<span class="foot-right">
-									{#if forked}
-										<button type="button" class="link" onclick={resetTiles} disabled={building}>
-											Reset to {preset.name}
-										</button>
-									{/if}
+								<button
+									type="button"
+									class="btn btn--ghost sm"
+									onclick={() => (confirmDeleteSet = false)}
+									disabled={building}
+								>
+									Keep
+								</button>
+							{:else}
+								{#if forked}
 									<button
 										type="button"
 										class="btn btn--ghost sm"
-										onclick={() => (editing = false)}
+										onclick={saveToLibrary}
+										disabled={building || !canSave}
+										title="Save this tile set to reuse it"
+									>
+										{savedOrigin ? 'Save' : 'Save to library'}
+									</button>
+								{/if}
+								{#if savedOrigin}
+									<button
+										type="button"
+										class="btn btn--ghost sm"
+										onclick={() => (confirmDeleteSet = true)}
+										disabled={building}
+										title="Delete this saved tile set from your library"
+									>
+										Delete
+									</button>
+								{/if}
+								{#if !editing}
+									<button
+										type="button"
+										class="btn btn--ghost sm"
+										onclick={startEdit}
 										disabled={building}
 									>
-										Done
+										{forked ? 'Edit tiles' : 'Customise'}
 									</button>
-								</span>
-							</div>
-						</div>
-					{:else}
-						<div class="rack">
-							{#each draftTiles as tile, i (i)}
-								<span class="rack-cell">
-									<Tile glyph={normalGlyphs[i]} value={tile.value} size="2rem" />
-									<span class="rack-count">×{tile.frequency}</span>
-								</span>
-							{/each}
-							{#if blankCount > 0}
-								<span class="rack-cell">
-									<Tile glyph="?" size="2rem" />
-									<span class="rack-count">×{blankCount}</span>
-								</span>
+								{/if}
 							{/if}
 						</div>
+					</div>
+
+					{#if editing}
+						<TileSetEditor bind:tiles={draftTiles} bind:blankCount disabled={building}>
+							{#snippet footer()}
+								{#if savedOrigin}
+									<button type="button" class="link" onclick={resetTiles} disabled={building}>
+										Reset changes
+									</button>
+								{:else if forked}
+									<button type="button" class="link" onclick={resetTiles} disabled={building}>
+										Reset to {preset.name}
+									</button>
+								{/if}
+								<button
+									type="button"
+									class="btn btn--ghost sm"
+									onclick={() => (editing = false)}
+									disabled={building}
+								>
+									Done
+								</button>
+							{/snippet}
+						</TileSetEditor>
+					{:else}
+						<TileRack tiles={rackTiles} {blankCount} />
 					{/if}
 				</div>
 
+				{#if saveNote}
+					<p class="note" class:err={!saveNote.ok} class:ok={saveNote.ok}>{saveNote.text}</p>
+				{/if}
 				{#if tilesetError}
 					<p class="note err">{tilesetError}</p>
 				{/if}
@@ -702,6 +769,16 @@
 		pointer-events: none;
 	}
 
+	.tiles-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--s3);
+	}
+	.tiles-actions code {
+		font-family: var(--font-word);
+		font-size: 0.85em;
+	}
+
 	/* — The bag: a bounded region for the tile set (Gestalt: common region) —— */
 	.bag {
 		margin-top: var(--s1);
@@ -722,6 +799,7 @@
 		display: flex;
 		align-items: center;
 		gap: var(--s3);
+		flex-wrap: wrap;
 	}
 	.bag-id {
 		display: flex;
@@ -729,6 +807,16 @@
 		gap: 0.15rem;
 		flex: 1;
 		min-width: 0;
+	}
+	.bag-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--s2);
+		flex-shrink: 0;
+	}
+	.del-q {
+		font-size: 0.8rem;
+		color: var(--invalid);
 	}
 	.bag-name-static {
 		font-weight: 600;
@@ -762,135 +850,6 @@
 		color: var(--ink-faint);
 	}
 
-	/* — Tile preview: the real maple tiles, as a rack (signature element) ——— */
-	.rack {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--s3) var(--s2);
-	}
-	.rack-cell {
-		display: inline-flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.2rem;
-	}
-	.rack-count {
-		font-family: var(--font-word);
-		font-size: 0.66rem;
-		color: var(--ink-faint);
-	}
-
-	/* — Tile editor: a full-width distribution table ————————————————————— */
-	.editor {
-		display: flex;
-		flex-direction: column;
-		gap: var(--s3);
-	}
-	/* No nested scroll: the table flows in the modal body, which is the sole
-	   scroll region. One scroll, one mental model. */
-	.table {
-		display: flex;
-		flex-direction: column;
-		gap: var(--s1);
-	}
-	/* Column labels + the fixed blanks row, set off from the editable tiles. */
-	.thead {
-		display: flex;
-		flex-direction: column;
-		gap: var(--s1);
-		border-bottom: 1px solid var(--line);
-		padding-bottom: var(--s2);
-	}
-	.erow {
-		display: grid;
-		grid-template-columns: minmax(4rem, 1.4fr) minmax(3rem, 1fr) minmax(3rem, 1fr) 3.5rem 2rem;
-		gap: var(--s2);
-		align-items: center;
-	}
-	.ehead {
-		font-family: var(--font-word);
-		font-size: 0.64rem;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: var(--ink-faint);
-	}
-	.c-tile {
-		text-align: left;
-	}
-	.ehead .c-num {
-		text-align: center;
-	}
-	.c-vowel,
-	.c-x {
-		display: flex;
-		justify-content: center;
-	}
-
-	.cell {
-		width: 100%;
-		background: var(--surface-1);
-		color: var(--ink);
-		border: 1px solid var(--line);
-		border-radius: var(--r-sm);
-		padding: 0.45rem 0.55rem;
-		font: inherit;
-		text-align: center;
-		transition: border-color var(--t-fast) var(--ease);
-	}
-	.cell:focus {
-		border-color: var(--maple);
-	}
-	.cell.glyph {
-		font-family: var(--font-word);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.03em;
-		text-align: left;
-	}
-	.cell.c-num {
-		font-family: var(--font-word);
-	}
-	/* Fixed (non-editable) cells in the blanks row read as labels, not fields. */
-	.cell.static {
-		display: flex;
-		align-items: center;
-		background: transparent;
-		border-color: transparent;
-		color: var(--ink-dim);
-		cursor: default;
-	}
-	.cell.static.c-num {
-		justify-content: center;
-	}
-
-	.c-vowel input[type='checkbox'] {
-		width: auto;
-		accent-color: var(--maple);
-		cursor: pointer;
-	}
-	.x {
-		color: var(--ink-faint);
-		font-size: 1.05rem;
-		line-height: 1;
-		padding: 0.1rem 0.3rem;
-		border-radius: var(--r-sm);
-	}
-	.x:hover:not(:disabled) {
-		color: var(--invalid);
-		background: var(--invalid-wash);
-	}
-
-	.editor-foot {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--s3);
-	}
-	.foot-right {
-		display: flex;
-		align-items: center;
-		gap: var(--s3);
-	}
 	.link {
 		color: var(--maple);
 		font-size: 0.82rem;
@@ -908,6 +867,9 @@
 	}
 	.note.err {
 		color: var(--invalid);
+	}
+	.note.ok {
+		color: var(--valid);
 	}
 	.note.err.strong {
 		background: var(--invalid-wash);

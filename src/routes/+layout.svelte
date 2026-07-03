@@ -27,6 +27,7 @@
 	import LexiconPicker from '$lib/components/LexiconPicker.svelte';
 	import ThemePicker from '$lib/components/ThemePicker.svelte';
 	import ProgressDialog from '$lib/components/ProgressDialog.svelte';
+	import AlphabetsDialog from '$lib/components/AlphabetsDialog.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 
 	let { children } = $props();
@@ -192,6 +193,9 @@
 {/if}
 {#if kbd.progress}
 	<ProgressDialog />
+{/if}
+{#if kbd.alphabets}
+	<AlphabetsDialog />
 {/if}
 
 <style>

@@ -54,6 +54,15 @@
 			run: () => kbd.openTheme()
 		},
 		{
+			id: 'tilesets',
+			label: 'Manage tile sets',
+			hint: 'Save, import and export custom letter bags',
+			group: 'Lexicon',
+			shortcut: [],
+			swaps: true,
+			run: () => kbd.openAlphabets()
+		},
+		{
 			id: 'progress',
 			label: 'Back up or restore progress',
 			hint: 'Export everything to a file, or import a backup',
