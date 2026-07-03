@@ -6,8 +6,15 @@
 
 **euouae** is a study and word-checking app for competitive Scrabble and word-game
 players. It's a fast, offline alternative to Collins Zyzzyva — the tool many
-tournament players use to look words up and drill them into memory. (The name is
-*EUOUAE*, a real word made entirely of vowels.)
+tournament players use to look words up and drill them into memory.
+
+> **About the name.** Zyzzyva was named for being the *last word in word study* —
+> for years it was also the last word in the dictionary. That distinction slipped
+> in 2015, when **ZZZ** and **ZZZS** were added to the word lists. I toyed with
+> naming this app *ZZZS* to carry the torch, until I remembered it's essentially
+> unpronounceable. So it's **euouae** instead — a word made entirely of vowels,
+> and a longtime favourite of mine as an organist and Scrabble player. (Do look up
+> what it means.)
 
 <p align="center">
   <img src="docs/screenshots/judge.png" width="860" alt="euouae's Word Judge ruling a play acceptable">
