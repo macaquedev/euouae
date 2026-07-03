@@ -9,6 +9,10 @@ players. It's a fast, offline alternative to Collins Zyzzyva — the tool many
 tournament players use to look words up and drill them into memory. (The name is
 *EUOUAE*, a real word made entirely of vowels.)
 
+<p align="center">
+  <img src="docs/screenshots/judge.png" width="860" alt="euouae's Word Judge ruling a play acceptable">
+</p>
+
 ## What you can do
 
 - **Judge words instantly.** Type in one or more words and euouae tells you which
@@ -50,6 +54,37 @@ tournament players use to look words up and drill them into memory. (The name is
   internet needed once it's installed — and it's built to be quick and
   keyboard-driven.
 - **Free and cross-platform.** Runs on Windows, macOS, and Linux.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/search.png" alt="Search results for an anagram of AEINRST">
+      <br><sub><b>Search</b> — find words by anagram, pattern, length, hooks, probability and more.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/lists.png" alt="Building and managing word lists">
+      <br><sub><b>Lists</b> — build study lists by hand, from a file, or straight from a search.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/word-info.png" alt="Word Info for RAISE showing hooks, definition and anagrams">
+      <br><sub><b>Word Info</b> — hooks, anagrams, definition and probability, live as you type.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/study.png" alt="Study deck selection built from saved lists">
+      <br><sub><b>Study</b> — spaced-repetition drills (FSRS or Cardbox) built from your lists.</sub>
+    </td>
+  </tr>
+</table>
+
+Light and dark themes are built in (with a picker to switch anytime):
+
+<p align="center">
+  <img src="docs/screenshots/dark-judge.png" width="860" alt="euouae's Word Judge in a dark theme">
+</p>
 
 ## Download
 
