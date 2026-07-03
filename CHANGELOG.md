@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-07-03
+
+### Added
+
+- A saved tile-set ("alphabet") library: custom tile sets can now be created,
+  edited, renamed, imported and exported independently of any single lexicon,
+  via a new "Manage tile sets" dialog in the command palette. The lexicon
+  builder saves into and loads from the same library.
+
+### Changed
+
+- Removed the file-size limits on lexicon word-list and progress-backup
+  imports.
+
 ## [0.1.1] - 2026-07-03
 
 ### Added
@@ -24,5 +38,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Initial release.
 
+[0.1.2]: https://github.com/macaquedev/euouae/releases/tag/v0.1.2
 [0.1.1]: https://github.com/macaquedev/euouae/releases/tag/v0.1.1
 [0.1.0]: https://github.com/macaquedev/euouae/releases/tag/v0.1.0
