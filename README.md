@@ -121,3 +121,13 @@ bun install
 bun run tauri dev     # run in development
 bun run tauri build   # build installers for your current OS
 ```
+
+## Support euouae
+
+euouae is free and always will be — no ads, no accounts, nothing locked behind a
+paywall. I build it in my own time because I want a genuinely good, offline study
+tool to exist for word-game players. If it's been useful to you and you'd like to
+give something back, I'd really appreciate it.
+
+- Click the **♥ Sponsor** button at the top of this page, or
+- donate directly via PayPal: **[paypal.me/macaquedev](https://www.paypal.me/macaquedev)**.
