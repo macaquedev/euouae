@@ -1,0 +1,11 @@
+# Configures the "Sponsor" button shown at the top of the repository.
+# Docs: https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+
+# GitHub Sponsors (no fees; requires enrolment + identity/bank verification).
+# Uncomment once your Sponsors profile at https://github.com/sponsors is live.
+# github: macaquedev
+
+# PayPal (stopgap until GitHub Sponsors is approved). GitHub has no native
+# PayPal field, so it goes under `custom`. Consider a free PayPal *business*
+# account over a personal one for donations.
+custom: ["https://www.paypal.me/macaquedev"]
