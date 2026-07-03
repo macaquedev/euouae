@@ -1,0 +1,28 @@
+# Changelog
+
+All notable changes to this project are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
+to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.1] - 2026-07-03
+
+### Added
+
+- Light and dark colour schemes with an appearance picker in the topbar: three
+  dark themes (Night Board, Onyx, Nocturne) and two light themes (Parchment,
+  Daylight). The choice persists across sessions and is applied before first
+  paint, so switching never flashes. First-run users follow their OS light/dark
+  preference until they pick one.
+
+### Changed
+
+- Full-screen Word Judge now matches Zyzzyva's input: type one word per line
+  (Enter starts a new line) and press Tab to check the whole play. Typed words
+  are left-aligned.
+
+## [0.1.0] - 2026-07-03
+
+- Initial release.
+
+[0.1.1]: https://github.com/macaquedev/euouae/releases/tag/v0.1.1
+[0.1.0]: https://github.com/macaquedev/euouae/releases/tag/v0.1.0
