@@ -4,6 +4,24 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<!-- Apply the saved colour scheme before first paint so switching never
+		     flashes. Falls back to the OS light/dark preference, then Night Board.
+		     Keep the id list in sync with THEMES in src/lib/theme/theme.svelte.ts. -->
+		<script>
+			(function () {
+				try {
+					var known = ['night', 'onyx', 'nocturne', 'parchment', 'daylight'];
+					var saved = localStorage.getItem('euouae:theme');
+					var t =
+						known.indexOf(saved) !== -1
+							? saved
+							: window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches
+								? 'parchment'
+								: 'night';
+					document.documentElement.dataset.theme = t;
+				} catch (e) {}
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

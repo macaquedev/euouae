@@ -20,10 +20,12 @@
 	import { prefersReducedMotion } from '$lib/motion';
 	import { NAV } from '$lib/keyboard/nav';
 	import { kbd } from '$lib/keyboard/ui.svelte';
+	import { theme } from '$lib/theme/theme.svelte';
 	import Tile from '$lib/components/Tile.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import ShortcutsHelp from '$lib/components/ShortcutsHelp.svelte';
 	import LexiconPicker from '$lib/components/LexiconPicker.svelte';
+	import ThemePicker from '$lib/components/ThemePicker.svelte';
 	import ProgressDialog from '$lib/components/ProgressDialog.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 
@@ -31,6 +33,7 @@
 
 	const reduce = prefersReducedMotion();
 
+	onMount(() => theme.init());
 	onMount(() => void lexicon.init());
 	onMount(() => void installCloseFlush());
 	onMount(() => void updater.init());
@@ -149,6 +152,7 @@
 			<button class="help" onclick={() => kbd.openHelp()} aria-label="Keyboard shortcuts" title="Shortcuts">
 				?
 			</button>
+			<ThemePicker />
 			<LexiconPicker />
 		</div>
 	</header>
@@ -250,7 +254,7 @@
 		align-items: center;
 		gap: var(--s5);
 		padding: 0.65rem var(--s5);
-		background: rgba(12, 16, 14, 0.82);
+		background: var(--topbar);
 		backdrop-filter: blur(10px);
 		border-bottom: 1px solid var(--line);
 	}

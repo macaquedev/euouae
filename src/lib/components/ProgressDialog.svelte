@@ -232,7 +232,7 @@
 	.backdrop {
 		position: absolute;
 		inset: 0;
-		background: rgba(4, 7, 5, 0.6);
+		background: var(--scrim);
 		backdrop-filter: blur(3px);
 		cursor: default;
 	}

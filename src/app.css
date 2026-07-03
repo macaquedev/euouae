@@ -4,34 +4,12 @@
    with a warm maple-tile accent. IBM Plex Sans (UI) + IBM Plex Mono (words).
    ========================================================================== */
 
+/* ----------------------------------------------------------------------------
+   Theme-independent tokens live in :root; every *colour* is a token supplied by
+   a theme block below (see "Themes"). Nothing here hardcodes a colour, so a new
+   scheme is one self-contained block — no component ever changes.
+   -------------------------------------------------------------------------- */
 :root {
-	/* Render native controls (select popups, date pickers, scrollbars) dark, so
-	   they never flash white-on-white against the felt. */
-	color-scheme: dark;
-
-	/* — Palette ———————————————————————————————————————————————— */
-	--board: #0c100e; /* board-felt black-green (page) */
-	--surface-1: #121714; /* raised panel */
-	--surface-2: #19201c; /* inputs, hover */
-	--surface-3: #212a25; /* pressed / active row */
-	--line: #28312c; /* hairline border */
-	--line-strong: #3a463f;
-
-	--ink: #ecefea; /* bone-white text */
-	--ink-dim: #99a39b; /* secondary text */
-	--ink-faint: #6a746d; /* captions, disabled */
-
-	--maple: #e6b36b; /* the wooden tile — signature accent */
-	--maple-soft: #f0cd97;
-	--maple-deep: #c9954e; /* pressed accent */
-	--on-maple: #1a1206; /* text on maple */
-	--maple-ghost: #2a2114; /* faint maple wash */
-
-	--valid: #5fd9a3; /* acceptable */
-	--valid-wash: #102a20;
-	--invalid: #f2685f; /* unacceptable */
-	--invalid-wash: #2c1513;
-
 	/* — Back-compat aliases (older components read these) ——————————— */
 	--bg: var(--board);
 	--surface: var(--surface-1);
@@ -41,6 +19,15 @@
 	--accent: var(--maple);
 	--valid-bg: var(--valid-wash);
 	--invalid-bg: var(--invalid-wash);
+
+	/* — The wooden tile ————————————————————————————————————————————
+	   The signature Scrabble tile is *always* warm maple, in every theme — it is
+	   the brand mark, not the accent. Themes recolour the interactive accent
+	   (--maple*) freely; the physical tile keeps these dedicated wood tokens. */
+	--tile-hi: #f0cd97; /* lit top edge */
+	--tile-face: #e6b36b; /* face (not --tile: that inline var is the tile's size) */
+	--tile-lo: #c9954e; /* shaded base */
+	--tile-ink: #1a1206; /* engraved glyph */
 
 	/* — Type ——————————————————————————————————————————————————— */
 	--font-ui: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -68,11 +55,191 @@
 	--t: 190ms;
 	--t-slow: 320ms;
 
-	/* — Elevation ————————————————————————————————————————————— */
+	--maxw: 64rem;
+}
+
+/* ============================================================================
+   Themes — each block supplies the full colour palette for one scheme and
+   nothing else. The active scheme is chosen by [data-theme] on <html>; the
+   absent/unknown case falls back to "night" (see :root:not([data-theme])).
+   Every theme MUST define the same token set:
+     neutrals   --board --board-glow --surface-1..3 --line --line-strong
+                --ink --ink-dim --ink-faint
+     accent     --maple --maple-soft(hover) --maple-deep(pressed) --on-maple
+                --maple-ghost(faint wash)
+     semantic   --valid --valid-wash --invalid --invalid-wash
+     chrome     --topbar(blurred bar) --scrim(modal backdrop)
+                --shadow-1 --shadow-pop  +  color-scheme
+   Only ordering constraint: --maple-deep is the darkest accent (gradients read
+   deep→base). The tile is fixed above, so accents needn't look like wood.
+   ========================================================================== */
+
+/* — Night Board (default): dark green felt + maple ————————————————————— */
+:root:not([data-theme]),
+[data-theme='night'] {
+	color-scheme: dark;
+
+	--board: #0c100e;
+	--board-glow: #10160f;
+	--surface-1: #121714;
+	--surface-2: #19201c;
+	--surface-3: #212a25;
+	--line: #28312c;
+	--line-strong: #3a463f;
+
+	--ink: #ecefea;
+	--ink-dim: #99a39b;
+	--ink-faint: #6a746d;
+
+	--maple: #e6b36b;
+	--maple-soft: #f0cd97;
+	--maple-deep: #c9954e;
+	--on-maple: #1a1206;
+	--maple-ghost: #2a2114;
+
+	--valid: #5fd9a3;
+	--valid-wash: #102a20;
+	--invalid: #f2685f;
+	--invalid-wash: #2c1513;
+
+	--topbar: rgba(12, 16, 14, 0.82);
+	--scrim: rgba(4, 7, 5, 0.6);
 	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
 	--shadow-pop: 0 18px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px var(--line);
+}
 
-	--maxw: 64rem;
+/* — Onyx: true-black OLED, high contrast + brightened maple ————————————————
+   Pure #000 page (unlit OLED pixels), white text, stronger hairlines and a
+   line-strong panel ring so edges stay crisp on black. */
+[data-theme='onyx'] {
+	color-scheme: dark;
+
+	--board: #000000;
+	--board-glow: #0a0a0c;
+	--surface-1: #0c0c0e;
+	--surface-2: #151517;
+	--surface-3: #1e1e22;
+	--line: #34343a;
+	--line-strong: #55555f;
+
+	--ink: #ffffff;
+	--ink-dim: #c4c5cc;
+	--ink-faint: #9698a1;
+
+	--maple: #efbd76;
+	--maple-soft: #ffd79a;
+	--maple-deep: #d6a152;
+	--on-maple: #1a1206;
+	--maple-ghost: #2b2110;
+
+	--valid: #5fe3a8;
+	--valid-wash: #07231a;
+	--invalid: #ff6f66;
+	--invalid-wash: #260f0d;
+
+	--topbar: rgba(0, 0, 0, 0.85);
+	--scrim: rgba(0, 0, 0, 0.72);
+	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.6);
+	--shadow-pop: 0 18px 50px -12px rgba(0, 0, 0, 0.9), 0 0 0 1px var(--line-strong);
+}
+
+/* — Nocturne: deep indigo + periwinkle accent ————————————————————————— */
+[data-theme='nocturne'] {
+	color-scheme: dark;
+
+	--board: #0b0e1a;
+	--board-glow: #141a38;
+	--surface-1: #12162a;
+	--surface-2: #1a2038;
+	--surface-3: #232b48;
+	--line: #2a3252;
+	--line-strong: #404a6e;
+
+	--ink: #e8ebf6;
+	--ink-dim: #9aa2c0;
+	--ink-faint: #6a7196;
+
+	--maple: #aeb8ff;
+	--maple-soft: #cdd3ff;
+	--maple-deep: #8b96ea;
+	--on-maple: #10132b;
+	--maple-ghost: #1c2246;
+
+	--valid: #63dbb0;
+	--valid-wash: #0f2a26;
+	--invalid: #ff7a83;
+	--invalid-wash: #2e1622;
+
+	--topbar: rgba(11, 14, 26, 0.82);
+	--scrim: rgba(4, 5, 14, 0.62);
+	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+	--shadow-pop: 0 18px 50px -12px rgba(0, 0, 0, 0.72), 0 0 0 1px var(--line);
+}
+
+/* — Parchment (light): warm cream paper + honey-oak accent ——————————————— */
+[data-theme='parchment'] {
+	color-scheme: light;
+
+	--board: #efe6d2;
+	--board-glow: #f7f0df;
+	--surface-1: #faf4e7;
+	--surface-2: #f1e8d5;
+	--surface-3: #e8ddc5;
+	--line: #ddd0b4;
+	--line-strong: #c8b894;
+
+	--ink: #2c2a24;
+	--ink-dim: #6a6455;
+	--ink-faint: #938c78;
+
+	--maple: #9c6a1a;
+	--maple-soft: #855a12; /* hover darkens (light bg) */
+	--maple-deep: #6f4a0d;
+	--on-maple: #fdf6e7;
+	--maple-ghost: #e7d3a6;
+
+	--valid: #1a8a58;
+	--valid-wash: #d9ecdd;
+	--invalid: #c23127;
+	--invalid-wash: #f6dcd6;
+
+	--topbar: rgba(239, 230, 210, 0.82);
+	--scrim: rgba(60, 50, 30, 0.35);
+	--shadow-1: 0 1px 2px rgba(80, 66, 40, 0.12);
+	--shadow-pop: 0 18px 50px -12px rgba(80, 66, 40, 0.28), 0 0 0 1px var(--line);
+}
+
+/* — Daylight (light): crisp cool white + deep teal accent ———————————————— */
+[data-theme='daylight'] {
+	color-scheme: light;
+
+	--board: #eef1f4;
+	--board-glow: #f8fafc;
+	--surface-1: #ffffff;
+	--surface-2: #eef1f5;
+	--surface-3: #e2e7ee;
+	--line: #d8dee6;
+	--line-strong: #bcc5d1;
+
+	--ink: #1c2530;
+	--ink-dim: #5a6675;
+	--ink-faint: #8a95a3;
+
+	--maple: #0f7d78;
+	--maple-soft: #0c6763; /* hover darkens (light bg) */
+	--maple-deep: #094f4c;
+	--on-maple: #f2fbfa;
+	--maple-ghost: #d6ebe9;
+
+	--valid: #147a4e;
+	--valid-wash: #d7ecdf;
+	--invalid: #c23636;
+	--invalid-wash: #f6dcdc;
+
+	--topbar: rgba(238, 241, 244, 0.82);
+	--scrim: rgba(20, 30, 45, 0.32);
+	--shadow-1: 0 1px 2px rgba(30, 45, 65, 0.12);
+	--shadow-pop: 0 18px 50px -12px rgba(30, 45, 65, 0.25), 0 0 0 1px var(--line);
 }
 
 * {
@@ -94,7 +261,7 @@ body {
 	-webkit-font-smoothing: antialiased;
 	text-rendering: optimizeLegibility;
 	/* A faint vignette so the board recedes and panels read as figure. */
-	background-image: radial-gradient(120% 80% at 50% -10%, #10160f 0%, var(--board) 60%);
+	background-image: radial-gradient(120% 80% at 50% -10%, var(--board-glow) 0%, var(--board) 60%);
 	background-attachment: fixed;
 }
 

@@ -7,6 +7,7 @@ class KeyboardUI {
 	help = $state(false);
 	lexiconPicker = $state(false);
 	progress = $state(false);
+	theme = $state(false);
 	/**
 	 * Set while something outside this store's own overlay set owns the
 	 * keyboard exclusively — a kiosk surface (Word Judge) or a standalone
@@ -60,6 +61,16 @@ class KeyboardUI {
 		this.progress = true;
 	}
 
+	openTheme() {
+		if (this.locked) return;
+		this.remember();
+		this.palette = false;
+		this.help = false;
+		this.lexiconPicker = false;
+		this.progress = false;
+		this.theme = true;
+	}
+
 	lock() {
 		this.close();
 		this.locked = true;
@@ -74,12 +85,13 @@ class KeyboardUI {
 		this.help = false;
 		this.lexiconPicker = false;
 		this.progress = false;
+		this.theme = false;
 		this.returnTo?.focus?.();
 		this.returnTo = null;
 	}
 
 	get anyOpen() {
-		return this.palette || this.help || this.lexiconPicker || this.progress;
+		return this.palette || this.help || this.lexiconPicker || this.progress || this.theme;
 	}
 }
 

@@ -27,9 +27,10 @@
 		font-family: var(--font-word);
 		font-weight: 600;
 		user-select: none;
-		/* Maple face: light top edge, slightly darker base — a real tile catches light. */
-		background: linear-gradient(160deg, var(--maple-soft) 0%, var(--maple) 55%, var(--maple-deep) 100%);
-		color: var(--on-maple);
+		/* Maple face: light top edge, slightly darker base — a real tile catches light.
+		   Uses the fixed wood tokens, so the brand tile stays maple in every theme. */
+		background: linear-gradient(160deg, var(--tile-hi) 0%, var(--tile-face) 55%, var(--tile-lo) 100%);
+		color: var(--tile-ink);
 		box-shadow:
 			inset 0 1px 0 rgba(255, 255, 255, 0.45),
 			inset 0 -2px 3px rgba(0, 0, 0, 0.18),

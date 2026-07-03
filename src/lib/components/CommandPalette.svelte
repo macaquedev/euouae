@@ -7,6 +7,7 @@
 	import { overlayDuration } from '$lib/motion';
 	import { lexicon } from '$lib/lexicon/store.svelte';
 	import { updater } from '$lib/updater/updater.svelte';
+	import { theme } from '$lib/theme/theme.svelte';
 
 	interface Command {
 		id: string;
@@ -42,6 +43,15 @@
 			shortcut: ['g', 'x'],
 			swaps: true,
 			run: () => kbd.openLexiconPicker()
+		},
+		{
+			id: 'theme',
+			label: 'Change theme',
+			hint: `Currently ${theme.theme.label}`,
+			group: 'Appearance',
+			shortcut: [],
+			swaps: true,
+			run: () => kbd.openTheme()
 		},
 		{
 			id: 'progress',
@@ -182,7 +192,7 @@
 	.backdrop {
 		position: absolute;
 		inset: 0;
-		background: rgba(4, 7, 5, 0.6);
+		background: var(--scrim);
 		backdrop-filter: blur(3px);
 		cursor: default;
 	}
