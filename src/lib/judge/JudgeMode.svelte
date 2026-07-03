@@ -131,14 +131,12 @@
 	}
 
 	function onInputKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
+		// Enter adds a new line — one word per line, as in Zyzzyva's Word Judge —
+		// and Tab checks the whole play at once.
+		if (event.key === 'Tab') {
 			event.preventDefault();
 			judge();
 		}
-	}
-
-	function onInput() {
-		if (input.includes('\n')) input = input.replace(/\n+/g, ' '); // pasted lines -> spaces
 	}
 
 	onMount(() => {
@@ -200,19 +198,18 @@
 		</div>
 	{:else}
 		<div class="prompt">
-			<p class="instruction">Type the play — words separated by spaces.</p>
+			<p class="instruction">Type the play — one word per line.</p>
 			<textarea
 				bind:this={inputEl}
 				bind:value={input}
 				onkeydown={onInputKeydown}
-				oninput={onInput}
 				rows="3"
 				spellcheck="false"
 				autocapitalize="characters"
 				autocomplete="off"
-				aria-label="Words to judge, separated by spaces"
+				aria-label="Words to judge, one per line"
 			></textarea>
-			<p class="enter">Enter to judge</p>
+			<p class="enter">Tab to judge</p>
 		</div>
 	{/if}
 
@@ -268,7 +265,7 @@
 		line-height: 1.1;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
-		text-align: center;
+		text-align: left;
 		outline: none;
 		caret-color: var(--accent);
 	}
