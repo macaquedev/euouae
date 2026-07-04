@@ -50,12 +50,25 @@
 		spec.tiles.map((t) => ({ glyph: t.glyph, value: t.value, frequency: t.frequency, vowel: t.vowel }));
 
 	let name = $state('');
+	// Text pasted into the box. An imported file never lands here — a 90 MB word
+	// list rendered in a <textarea> (and re-scanned by the derived checks below on
+	// every keystroke or tile edit) freezes the whole tab. Imported content is held
+	// off-DOM in `imported` instead and shown as a summary card.
 	let text = $state('');
+	let imported = $state<string | null>(null);
+	let importedWords = $state(0);
 	let fileName = $state<string | null>(null);
 	let building = $state(false);
 	let buildProgress = $state<{ phase: CustomBuildPhase; done: number; total: number } | null>(null);
 	let buildController: AbortController | null = null;
 	let error = $state<string | null>(null);
+	// A finished build that dropped some words for using letters outside the tile
+	// set. The lexicon is already saved; this just reports the drop before closing,
+	// since imported files skip the live `firstInvalidWord` pre-check.
+	let buildDone = $state<{ built: number; skipped: number } | null>(null);
+
+	// The effective word list to build from: an imported file wins over the box.
+	const source = $derived(imported ?? text);
 
 	const BUILD_PHASE_LABEL: Record<CustomBuildPhase, string> = {
 		parsing: 'Parsing word list',
@@ -173,9 +186,21 @@
 		else loadPreset(basePreset);
 	}
 
+	// For pasted text this recomputes live (bounded — the user typed it); for an
+	// imported file `source` is stable, so the one big split runs once on import.
 	const wordCount = $derived(
-		text.split('\n').filter((l) => l.trim() !== '' && !l.startsWith('#')).length
+		imported !== null
+			? importedWords
+			: text.split('\n').filter((l) => l.trim() !== '' && !l.startsWith('#')).length
 	);
+
+	function countWords(list: string): number {
+		let n = 0;
+		for (const line of list.split('\n')) {
+			if (line.trim() !== '' && !line.startsWith('#')) n++;
+		}
+		return n;
+	}
 
 	// Tile glyphs normalised once for the preview, validation, and building.
 	const normalGlyphs = $derived(draftTiles.map((t) => normalGlyph(t.glyph)));
@@ -208,7 +233,11 @@
 	// Surfaced live so the word list (or the tile set) gets fixed before
 	// building, rather than that word silently being dropped at build time.
 	const firstInvalidWord = $derived.by(() => {
-		if (!activeAlphabet) return null;
+		// Only the paste box is scanned live. Tokenizing every word of an imported
+		// file synchronously here would freeze the tab and rerun on every tile edit;
+		// that validation happens in the (chunked, cancellable) build instead, which
+		// reports what it dropped via `buildDone`.
+		if (imported !== null || !activeAlphabet) return null;
 		for (const entry of parseSource(text)) {
 			if (!activeAlphabet.tokenizeStrict(entry.word)) return entry.word;
 		}
@@ -306,14 +335,24 @@
 		if (!file) return;
 		try {
 			const contents = await file.text();
+			// Held off-DOM: a large list must never reach the <textarea> or the
+			// synchronous derived scans. Word count is taken once, here.
+			imported = contents;
+			importedWords = countWords(contents);
 			fileName = file.name;
-			text = contents;
 			error = null;
 		} catch (err) {
 			error = `Couldn't read ${file.name}: ${err instanceof Error ? err.message : String(err)}`;
 		} finally {
 			input.value = '';
 		}
+	}
+
+	function removeImported() {
+		imported = null;
+		importedWords = 0;
+		fileName = null;
+		error = null;
 	}
 
 	function cancelBuild() {
@@ -330,6 +369,7 @@
 		}
 		building = true;
 		buildProgress = null;
+		buildDone = null;
 		const controller = new AbortController();
 		buildController = controller;
 		// Let the "Building…" state paint before the compile takes over.
@@ -337,14 +377,22 @@
 		try {
 			const trimmed = name.trim();
 			const { alphabet: tileset, choice } = resolveAlphabet();
-			// firstInvalidWord already guarantees (via `ready`) that nothing here
-			// gets dropped — buildRows' own filter is just a defensive backstop.
-			const { bytes, wordCount: built } = await buildCustomLexicon(tileset, text, {
+			// For pasted text `firstInvalidWord` guarantees (via `ready`) nothing gets
+			// dropped. An imported file skips that live check, so `skipped` here is the
+			// real report of words left out — surfaced via `buildDone` below.
+			const { bytes, wordCount: built, skipped } = await buildCustomLexicon(tileset, source, {
 				onProgress: (p) => (buildProgress = p),
 				signal: controller.signal
 			});
 			await saveCustomLexicon(trimmed, choice, bytes, built);
-			oncreated(trimmed);
+			if (skipped > 0) {
+				// Lexicon is already saved; pause on a summary so the drop isn't silent.
+				building = false;
+				buildProgress = null;
+				buildDone = { built, skipped };
+			} else {
+				oncreated(trimmed);
+			}
 		} catch (err) {
 			// A cancelled build returns to the editable form quietly — it's not a
 			// failure, so it doesn't get the red error banner.
@@ -415,32 +463,51 @@
 						<span class="count">{wordCount.toLocaleString()} {wordCount === 1 ? 'word' : 'words'}</span>
 					{/if}
 				</div>
-				<textarea
-					id="lex-words"
-					class="input area"
-					bind:value={text}
-					placeholder={'AA\nAAH\tto exclaim in surprise\nAALII\ta tropical shrub\n…'}
-					spellcheck="false"
-					disabled={building}
-				></textarea>
-				<div class="area-foot">
-					<input
-						bind:this={fileInput}
-						type="file"
-						accept=".txt,.tsv,.csv,text/plain"
-						onchange={onFile}
-						hidden
-					/>
-					<button
-						type="button"
-						class="btn btn--ghost sm"
-						onclick={() => fileInput?.click()}
+				<input
+					bind:this={fileInput}
+					type="file"
+					accept=".txt,.tsv,.csv,text/plain"
+					onchange={onFile}
+					hidden
+				/>
+				{#if imported !== null}
+					<!-- A file is never poured into the textarea — it's shown as a card so a
+					     huge list can't lock up the tab. -->
+					<div class="loaded">
+						<div class="loaded-id">
+							<span class="loaded-name">{fileName}</span>
+							<span class="loaded-meta">Imported — not shown here to stay responsive</span>
+						</div>
+						<button
+							type="button"
+							class="btn btn--ghost sm"
+							onclick={removeImported}
+							disabled={building}
+						>
+							Remove
+						</button>
+					</div>
+				{:else}
+					<textarea
+						id="lex-words"
+						class="input area"
+						bind:value={text}
+						placeholder={'AA\nAAH\tto exclaim in surprise\nAALII\ta tropical shrub\n…'}
+						spellcheck="false"
 						disabled={building}
-					>
-						Import file
-					</button>
-					<span class="faint">{fileName ?? 'or paste above'}</span>
-				</div>
+					></textarea>
+					<div class="area-foot">
+						<button
+							type="button"
+							class="btn btn--ghost sm"
+							onclick={() => fileInput?.click()}
+							disabled={building}
+						>
+							Import file
+						</button>
+						<span class="faint">or paste above</span>
+					</div>
+				{/if}
 				{#if firstInvalidWord}
 					<p class="note err">
 						“{firstInvalidWord}” uses a letter outside the {displayName} tile set.
@@ -606,6 +673,14 @@
 
 		<footer class="foot">
 			{#if error}<p class="note err strong" role="alert">{error}</p>{/if}
+			{#if buildDone}
+				<p class="note ok" role="status">
+					Built {buildDone.built.toLocaleString()}
+					{buildDone.built === 1 ? 'word' : 'words'}. {buildDone.skipped.toLocaleString()}
+					{buildDone.skipped === 1 ? 'word was' : 'words were'} skipped — they use letters
+					outside the {displayName} tile set.
+				</p>
+			{/if}
 			{#if building}
 				<div class="build-progress">
 					<div class="build-progress-track">
@@ -620,12 +695,18 @@
 				</div>
 			{/if}
 			<div class="foot-actions">
-				<button type="button" class="btn btn--ghost" onclick={() => (building ? cancelBuild() : oncancel())}>
-					{building ? 'Cancel build' : 'Cancel'}
-				</button>
-				<button type="button" class="btn btn--primary" onclick={build} disabled={!ready}>
-					{building ? 'Building…' : 'Build lexicon'}
-				</button>
+				{#if buildDone}
+					<button type="button" class="btn btn--primary" onclick={() => oncreated(name.trim())}>
+						Done
+					</button>
+				{:else}
+					<button type="button" class="btn btn--ghost" onclick={() => (building ? cancelBuild() : oncancel())}>
+						{building ? 'Cancel build' : 'Cancel'}
+					</button>
+					<button type="button" class="btn btn--primary" onclick={build} disabled={!ready}>
+						{building ? 'Building…' : 'Build lexicon'}
+					</button>
+				{/if}
 			</div>
 		</footer>
 	</div>
@@ -740,6 +821,37 @@
 		display: flex;
 		align-items: center;
 		gap: var(--s3);
+	}
+
+	/* Stand-in for the textarea when a file is imported (kept off-DOM). */
+	.loaded {
+		display: flex;
+		align-items: center;
+		gap: var(--s3);
+		background: var(--surface-2);
+		border: 1px solid var(--line);
+		border-radius: var(--r);
+		padding: var(--s3) var(--s4);
+	}
+	.loaded-id {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		flex: 1;
+		min-width: 0;
+	}
+	.loaded-name {
+		font-family: var(--font-word);
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: var(--ink);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.loaded-meta {
+		font-size: 0.76rem;
+		color: var(--ink-faint);
 	}
 
 	.btn.sm {
