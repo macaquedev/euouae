@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-07-04
+
+### Fixed
+
+- Importing a large word list (e.g. tens of megabytes) into the custom lexicon
+  builder no longer freezes the app. Imported files are kept out of the on-screen
+  text box and are no longer re-scanned on every keystroke; a summary card is
+  shown instead. Any words dropped for using letters outside the chosen tile set
+  are reported after the build.
+
 ## [0.1.2] - 2026-07-03
 
 ### Added
@@ -38,6 +48,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Initial release.
 
+[0.1.3]: https://github.com/macaquedev/euouae/releases/tag/v0.1.3
 [0.1.2]: https://github.com/macaquedev/euouae/releases/tag/v0.1.2
 [0.1.1]: https://github.com/macaquedev/euouae/releases/tag/v0.1.1
 [0.1.0]: https://github.com/macaquedev/euouae/releases/tag/v0.1.0
