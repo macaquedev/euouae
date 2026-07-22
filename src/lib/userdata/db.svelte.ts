@@ -13,6 +13,16 @@ import { sqliteRuntime } from '$lib/sqlite/runtime';
  *  backup (userdata/progress.ts) can pack and restore it by name. */
 export const USER_DB_FILE = 'euouae.sqlite3';
 
+/** Last good snapshot, refreshed once per session on open. If the main file is
+ *  missing, empty, or fails to deserialize, open() falls back to this instead
+ *  of silently starting a fresh DB — which is how a crash that truncated the
+ *  main file once destroyed a user's entire cardbox. */
+const USER_DB_BACKUP_FILE = 'euouae.sqlite3.bak';
+
+/** Where an unreadable main snapshot is preserved for manual recovery before
+ *  the backup takes over — never overwrite the only copy of bad data. */
+const USER_DB_CORRUPT_FILE = 'euouae.sqlite3.corrupt';
+
 const MIGRATIONS = `
 CREATE TABLE IF NOT EXISTS cards (
 	lexicon TEXT NOT NULL,
@@ -101,9 +111,9 @@ interface UserDb {
 
 let dbPromise: Promise<UserDb> | undefined;
 
-async function loadSnapshot(): Promise<Uint8Array | null> {
-	if (!(await exists(USER_DB_FILE))) return null;
-	const bytes = await readFile(USER_DB_FILE);
+async function loadSnapshot(file: string): Promise<Uint8Array | null> {
+	if (!(await exists(file))) return null;
+	const bytes = await readFile(file);
 	return bytes.length > 0 ? bytes : null;
 }
 
@@ -113,22 +123,69 @@ async function writeSnapshot(bytes: Uint8Array): Promise<void> {
 
 async function open(): Promise<UserDb> {
 	const sqlite3 = await sqliteRuntime();
-	const db = new sqlite3.oo1.DB();
 
-	const bytes = await loadSnapshot();
-	if (bytes) {
-		const ptr = sqlite3.wasm.allocFromTypedArray(bytes);
-		db.checkRc(
-			sqlite3.capi.sqlite3_deserialize(
-				db.pointer!,
-				'main',
-				ptr,
-				bytes.length,
-				bytes.length,
-				sqlite3.capi.SQLITE_DESERIALIZE_FREEONCLOSE | sqlite3.capi.SQLITE_DESERIALIZE_RESIZEABLE
-			)
-		);
+	/** Deserialize a snapshot and prove it readable, or close the handle and
+	 *  throw — a truncated image can carry a valid first page, so header checks
+	 *  alone aren't enough. */
+	const openSnapshot = (bytes: Uint8Array): Database => {
+		const snapshotDb = new sqlite3.oo1.DB();
+		try {
+			const ptr = sqlite3.wasm.allocFromTypedArray(bytes);
+			snapshotDb.checkRc(
+				sqlite3.capi.sqlite3_deserialize(
+					snapshotDb.pointer!,
+					'main',
+					ptr,
+					bytes.length,
+					bytes.length,
+					sqlite3.capi.SQLITE_DESERIALIZE_FREEONCLOSE |
+						sqlite3.capi.SQLITE_DESERIALIZE_RESIZEABLE
+				)
+			);
+			if (snapshotDb.selectValue('PRAGMA quick_check') !== 'ok') {
+				throw new Error('snapshot failed quick_check');
+			}
+			return snapshotDb;
+		} catch (err) {
+			snapshotDb.close();
+			throw err;
+		}
+	};
+
+	const mainExists = await exists(USER_DB_FILE);
+	const main = await loadSnapshot(USER_DB_FILE);
+
+	let db: Database | null = null;
+	let loaded: Uint8Array | null = null;
+	if (main) {
+		try {
+			db = openSnapshot(main);
+			loaded = main;
+		} catch {
+			// Keep the only copy of the bad bytes before the backup takes over.
+			await writeFile(USER_DB_CORRUPT_FILE, main).catch(() => {});
+		}
 	}
+	if (!db) {
+		const backup = await loadSnapshot(USER_DB_BACKUP_FILE);
+		if (backup) {
+			// A corrupt backup fails open() loudly — never fall through to a
+			// fresh DB while any snapshot of the user's data still exists.
+			db = openSnapshot(backup);
+			loaded = backup;
+			// Heal the main snapshot now, not on the next mutation.
+			await writeSnapshot(backup);
+		} else if (mainExists) {
+			throw new Error(
+				`${USER_DB_FILE} is empty or unreadable (likely a crash during a save) ` +
+					`and no ${USER_DB_BACKUP_FILE} exists to restore from. An unreadable ` +
+					`snapshot is preserved as ${USER_DB_CORRUPT_FILE} in the app data ` +
+					`directory; delete ${USER_DB_FILE} to start fresh.`
+			);
+		}
+		// Neither file exists: a genuine first run.
+	}
+	db ??= new sqlite3.oo1.DB();
 	db.exec(MIGRATIONS);
 	// Lists predating saved-order tracking get a nullable position column.
 	ensureColumn(db, 'list_words', 'position', 'INTEGER');
@@ -140,6 +197,12 @@ async function open(): Promise<UserDb> {
 	// The Leitner box is now derived from `streak`, not stored — fold the old
 	// cardbox columns into the shared review state and drop them.
 	retireCardboxColumns(db);
+
+	// Refresh the fallback with the snapshot that just proved loadable. Best
+	// effort: a failed backup write must not block opening the app.
+	if (loaded) {
+		await writeFile(USER_DB_BACKUP_FILE, loaded).catch(() => {});
+	}
 
 	return { db, export: () => sqlite3.capi.sqlite3_js_db_export(db.pointer!) };
 }

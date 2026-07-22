@@ -25,7 +25,15 @@ async function tauriStorage(): Promise<AppStorage> {
 		readFile: (path) => fs.readFile(path, opts),
 		writeFile: async (path, bytes) => {
 			await fs.mkdir(dirOf(path), { ...opts, recursive: true }).catch(() => {});
-			await fs.writeFile(path, bytes, opts);
+			// Write a sibling temp file and rename it over the target. A plain
+			// fs.writeFile truncates in place, so a crash mid-write leaves the
+			// target empty — that once destroyed the user DB (CHANGELOG 0.1.4).
+			const tmp = `${path}.tmp`;
+			await fs.writeFile(tmp, bytes, opts);
+			await fs.rename(tmp, path, {
+				oldPathBaseDir: fs.BaseDirectory.AppData,
+				newPathBaseDir: fs.BaseDirectory.AppData
+			});
 		},
 		remove: (path) => fs.remove(path, opts)
 	};
@@ -53,6 +61,8 @@ function opfsStorage(root: FileSystemDirectoryHandle): AppStorage {
 			const handle = await (await dirFor(path, false)).getFileHandle(nameOf(path));
 			return new Uint8Array(await (await handle.getFile()).arrayBuffer());
 		},
+		// Already crash-safe: createWritable() stages into a swap file that only
+		// replaces the target on close(), so no temp-and-rename dance is needed.
 		async writeFile(path, bytes) {
 			const handle = await (await dirFor(path, true)).getFileHandle(nameOf(path), { create: true });
 			const writable = await handle.createWritable();
