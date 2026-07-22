@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-07-22
+
+### Fixed
+
+- A crash while progress was being saved could leave the user database empty,
+  and the next launch would silently start fresh — permanently losing all
+  cards, review history and saved lists. Saves are now atomic (written to a
+  temporary file and renamed into place), every successful launch keeps a
+  last-good backup snapshot (`euouae.sqlite3.bak`), and a missing or corrupt
+  database is restored from that backup instead of being replaced with an
+  empty one. If no backup exists, the app preserves the unreadable file as
+  `euouae.sqlite3.corrupt` and reports the problem rather than wiping data.
+
 ## [0.1.3] - 2026-07-04
 
 ### Fixed
