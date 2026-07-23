@@ -1,5 +1,13 @@
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  // WebKitGTK 2.42+ can fail EGL init through its DMA-BUF renderer on some
+  // Linux GPU/driver combos, leaving a blank grey window. Opt out unless the
+  // user has explicitly set the variable themselves.
+  #[cfg(target_os = "linux")]
+  if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+    std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+  }
+
   tauri::Builder::default()
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_dialog::init())
