@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-07-23
+
+### Fixed
+
+- On some Linux systems (WebKitGTK 2.42+ with certain GPU/driver combinations,
+  notably under Wayland), the app window opened as a blank grey screen because
+  WebKitGTK's DMA-BUF renderer failed to initialise EGL. The renderer is now
+  disabled on Linux at startup, unless `WEBKIT_DISABLE_DMABUF_RENDERER` is
+  already set in the environment.
+
 ## [0.1.4] - 2026-07-22
 
 ### Fixed
